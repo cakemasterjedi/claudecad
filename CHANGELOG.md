@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Geometry check** in `studio check` / `build`: per part, valid B-rep, closed shell, positive volume, one solid,
+  watertight STL mesh.
+- **Wall check** (`--min-wall`, default 1.2 mm): regions thinner than the limit, by ray casting; skips grazing hits
+  near fillets and edges.
+- **`studio build --formats step,stl,3mf`**: one file per part (named from the fit file, else `part<N>`) next to the
+  combined files, and a 3MF with one object per part.
+- **Section PNG** from `studio fit` (`out/<name>/<name>_section.png`): the assembled parts cut by the `[section]`
+  plane of the fit file.
+- **Exploded scene** in `studio view` (`[view]` table in the fit file).
+
+### Changed
+
+- `studio build` exits 1 and exports nothing when a part fails the geometry check.
+
 ## 0.2.0 (2026-10-10)
 
 ### Added

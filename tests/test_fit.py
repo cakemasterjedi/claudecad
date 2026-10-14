@@ -91,7 +91,7 @@ def test_cli_fit_and_view(tmp_path, monkeypatch, capsys):
     page = (tmp_path / "out/lidded_box/lidded_box_view.html").read_text()
     data = json.loads(re.search(r'<script id="data" type="application/json">(.*?)</script>', page, re.S)
                       .group(1).replace("<\\/", "</"))
-    assert [s["name"] for s in data["scenes"]] == ["As printed", "Assembled"]
+    assert [s["name"] for s in data["scenes"]] == ["As printed", "Assembled", "Exploded"]
     assert [p["label"] for p in data["scenes"][1]["parts"]] == ["box", "lid", "card"]
     stl = base64.b64decode(data["scenes"][0]["parts"][0]["stl"])
     n = struct.unpack("<I", stl[80:84])[0]

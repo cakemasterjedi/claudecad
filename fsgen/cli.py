@@ -110,7 +110,7 @@ def paste_command(path, tr, args) -> int:
 
 def fit_view_command(path, tr, args) -> int:
     """fit: assembled-position interference check from <script>.fit.toml; view: interactive 3D viewer (0 calls)."""
-    from .native.fit import FitError, default_spec_path, export_assembly, load_spec, place, run_fit
+    from .native.fit import FitError, default_spec_path, explode, export_assembly, load_spec, place, run_fit
     from .native.local import build_local
     from .native.viewer import printed_items, scene_parts, write_viewer
 
@@ -132,6 +132,13 @@ def fit_view_command(path, tr, args) -> int:
             res = run_fit(solids, spec, spec_path.parent)
             print(res.report())
             print("wrote", export_assembly(res.placed, out / f"{path.stem}_assembled.step"))
+            from .native.section import render_section, section
+            cut = section(res.placed, spec)
+            if cut:
+                print("wrote", render_section(cut, spec, out / f"{path.stem}_section.png", path.stem),
+                      "(section: " + ", ".join(f"{c.name} {c.area_mm2:.0f} mm2" for c in cut) + ")")
+            else:
+                print("section plane misses every part (set [section] origin/normal in the fit file)")
             print("(0 Onshape calls)")
             return 0 if res.ok else 1
         from .native.viewer import PALETTE
@@ -144,6 +151,8 @@ def fit_view_command(path, tr, args) -> int:
         if placed:
             scenes.append({"name": "Assembled",
                            "parts": scene_parts([(p.name, p.shape, color_of.get(p.name, p.color)) for p in placed])})
+            scenes.append({"name": "Exploded",
+                           "parts": scene_parts([(n, s_, color_of.get(n, c)) for n, s_, c in explode(placed, spec)])})
         else:
             print(f"(no fit file at {spec_path}: showing the print layout only)")
         title = args.name or path.stem.replace("_", " ").capitalize()
@@ -183,13 +192,41 @@ def cmd_studio(args):
         from .native.local import build_local, render
         loc = build_local(tr)
         print(loc.report() if loc.ok else f"local build error: {loc.error}")
+        valid = True
         if loc.ok and loc.run.solids:
             from .native.printcheck import overhangs, report as print_report
-            print(print_report(overhangs([b.shape for b in loc.run.solids])))
-        if args.action == "build" and loc.ok:
+            solids = [b.shape for b in loc.run.solids]
+            print(print_report(overhangs(solids)))
+            from .native import geomcheck
+            checked = geomcheck.validity(solids)
+            valid = all(v.ok for v in checked)
+            print(geomcheck.validity_report(checked))
+            print(geomcheck.thin_wall_report(geomcheck.thin_walls(solids, args.min_wall), args.min_wall))
+        if args.action == "build" and loc.ok and not valid:
+            print("not exporting: fix the geometry problems above first")
+        if args.action == "build" and loc.ok and valid:
             from .fslite.runner import export as local_export
             out = Path("out") / path.stem
-            files = local_export(loc.run, out, path.stem) + [render(loc, out / f"{path.stem}.png", path.stem)]
+            formats = [f.strip() for f in args.formats.split(",") if f.strip()]
+            if bad := [f for f in formats if f not in ("step", "stl", "3mf")]:
+                print(f"--formats: unknown {', '.join(bad)} (use step, stl, 3mf)")
+                return 1
+            files = local_export(loc.run, out, path.stem, tuple(f for f in formats if f != "3mf"))
+            files.append(render(loc, out / f"{path.stem}.png", path.stem))
+            if loc.run.solids and ("3mf" in formats or len(loc.run.solids) > 1):
+                from .native.fit import FitError, default_spec_path, load_spec
+                from .native.partexport import export_parts, part_names
+                bodies = [b.shape for b in loc.run.solids]
+                spec_path = Path(args.fit) if args.fit else default_spec_path(path)
+                try:
+                    spec = load_spec(spec_path) if spec_path.exists() else None
+                except FitError as e:
+                    spec = None
+                    print(f"fit file {spec_path}: {e}")
+                names, note = part_names(bodies, spec, spec_path.parent)
+                if note:
+                    print(f"note: {note}")
+                files += export_parts(bodies, names, out, path.stem, tuple(formats))
             print("wrote", ", ".join(map(str, files)))
             from .outputs import open_in_freecad, to_dropbox
             if args.dropbox:
@@ -198,7 +235,7 @@ def cmd_studio(args):
             if args.open:
                 open_in_freecad(files[0])
         print(f"({loc.seconds * 1000:.0f} ms, 0 Onshape calls)")
-        return 0 if loc.ok else 1
+        return 0 if loc.ok and valid else 1
     from .onshape import Onshape
 
     if args.budget is not None and est.total > args.budget:
@@ -435,6 +472,10 @@ def main(argv=None):
     s.add_argument("--budget", type=int, help="refuse to push if the estimate exceeds this many calls")
     s.add_argument("--dropbox", action="store_true", help="build: also copy outputs to FSGEN_DROPBOX_DIR")
     s.add_argument("--open", action="store_true", help="build: open the STEP in FreeCAD")
+    s.add_argument("--min-wall", type=float, default=1.2, metavar="MM",
+                   help="check/build: report walls thinner than this (default 1.2 mm)")
+    s.add_argument("--formats", default="step,stl", help="build: comma list of step,stl,3mf (several parts: one file "
+                   "per part too, plus a combined 3MF with one object per part)")
     s.add_argument("--fit", help="fit/view: fit file (default: the script's name with .fit.toml)")
     s.set_defaults(fn=cmd_studio)
 

@@ -359,3 +359,25 @@ A Claude agent in another project built a part with fsgen and reported what got 
 - Official usage (MCP `get_api_usage`) was 1166 when fsgen's ledger said 741: about 425 calls came from outside
   fsgen (the MCP server, other sessions or apps). Recalibrated with `fsgen usage --set-official 1166`. Two MCP doc
   searches followed; whether they counted was not measured.
+
+## 2026-10-14: geometry check, wall check, per-part/3MF export (measured locally, 0 calls)
+
+- Wall check = numpy Moller-Trumbore ray casting against the part's own mesh (0.05 mm deflection), from up to 4000
+  area-weighted random surface points along the inward normal. Chosen over OCP `IntCurvesFace_ShapeIntersector`
+  because one batched numpy pass beats thousands of per-ray Python calls. Timings (whole `fsgen` check, per part):
+  lidded box 0.04 s, plate 0.23 s, l_bracket 0.1 s, flange 0.6 s, enclosure (36 faces) 0.6 s, M12 bolt (threads)
+  1.6 s. Cost grows with samples x triangles; chunks of 64 rays.
+- False positives near edges: a normal ray from a fillet, chamfer or sharp edge leaves the solid at a grazing angle
+  and gives a short distance. Instead of skipping a band along every edge, only exits whose surface normal is within
+  60 deg of the ray (dot >= 0.5) count; the others are dropped. Entering hits are ignored: on a concave hole the
+  facets lie in the void, so a start point there would otherwise "hit" the hole wall at once. Result: no thin
+  regions on plate (holes + corner fillets), flange, l_bracket, enclosure; a 0.8 mm web on a 3 mm base reports
+  0.8 mm. Limits: features smaller than the ~1 mm sample spacing can be missed, and the M12 thread reports 61
+  regions of 0.4-0.5 mm (the crests are that thin, so it is a true hit).
+- STL-level watertightness: vertices merged within 1e-6 mm after meshing the whole shape; every mesh edge must
+  belong to 2 triangles (triangles collapsed at sphere/cone poles are dropped first). The B-rep edge count must
+  treat a seam as 2 sides: OCCT's edge->face ancestor list already contains the face twice, so counting the list
+  length gives 2 for seams and a naive "+1 if closed" gives false open edges.
+- 3MF: build123d `Mesher` (lib3mf 2.5). It writes an extra empty component object per mesh (harmless, build items
+  are the parts). **lib3mf resets the process locale to "C"**, after which `Path.write_text` of non-ASCII text
+  fails; `partexport` restores the locale after writing.
