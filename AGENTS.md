@@ -16,10 +16,13 @@ write the Part Studio script, fsgen checks it, builds it locally and delivers it
    a 4-view preview `out/<name>/<name>.png`) and the push estimate. 0 Onshape calls. Look at the preview if you
    can read images; iterate with the user. Features reported as "not built locally" are not in the preview:
    say so, don't claim they are checked. For printed parts follow the 3D-printing rules in `rules.md`; the
-   build prints a print check (overhangs flatter than 45° off the bed).
+   build prints a print check (overhangs flatter than 45° off the bed), a geometry check (valid closed solid,
+   watertight mesh) and a wall check (`--min-wall`, default 1.2 mm); `--formats step,stl,3mf` also writes one file
+   per part and a 3MF.
    Parts that go together (hinges, snap fits, lids, a part around a real component): write
    `parts/<name>.fit.toml` and run `fsgen studio fit parts/<name>.fs` (assembled-position overlaps and motions,
-   format in `fsgen/native/fit.py`). `fsgen studio view parts/<name>.fs` writes an interactive 3D viewer.
+   format in `fsgen/native/fit.py`). `fsgen studio fit` also writes a section PNG of the assembly (`[section]` in the fit file);
+   `fsgen studio view parts/<name>.fs` writes an interactive 3D viewer (with an exploded scene).
 5. Deliver: `fsgen studio paste parts/<name>.fs --name "…"` (custom feature to paste, 0 calls) or
    `fsgen studio push parts/<name>.fs --name "…" --metrics --budget N` (native editable tree; ask first and show
    the estimate). Edits to a pushed part: change the script and push again (1–2 calls).

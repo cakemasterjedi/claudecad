@@ -31,6 +31,14 @@ a snap fit shows as a small overlap near the closed position, a collision as a l
     ignore = [["pin", "A"]]         # pairs allowed to overlap in the assembled position
     snap_limit = 3.0                # mm3: a larger overlap counts as a collision
 
+    [section]                       # optional: `fsgen studio fit` also writes out/<name>/<name>_section.png
+    origin = [0, 0, 0]              # a point on the cutting plane (mm; default [0, 0, 0])
+    normal = [0, 1, 0]              # default: the XZ plane, drawn X right, Z up, seen from -Y
+
+    [view]                          # optional: the "Exploded" scene of `fsgen studio view`
+    explode = [0, 0, 1]             # direction (default [0, 0, 1])
+    explode_distance = 20           # mm per rank: the part with centroid rank k moves k * distance along it
+
 Placement ops: { move = [x, y, z] }, { rotate = deg, axis = [..], origin = [..] }, or
 { matrix = [[..], [..], [..]], offset = [..] } with a rotation matrix. A printed part can only be moved and turned,
 never mirrored: a matrix with determinant -1 is rejected.
@@ -311,6 +319,28 @@ def run_fit(solids_m, spec: dict, base: Path) -> FitResult:
             raise FitError(f"motion {name}: expect must be free, snap, blocked or collides")
         motions.append(res)
     return FitResult(placed, clashes, motions)
+
+
+def explode(placed: list[Placed], spec: dict | None) -> list[tuple]:
+    """(name, shape, color) of every placed part/component moved along the [view] explode direction by
+    distance * k, k = rank of its centroid along that direction (0 = lowest), so they spread in order."""
+    view = (spec or {}).get("view") or {}
+    d = _vec3(view.get("explode", [0, 0, 1]), "[view] explode")
+    if not np.linalg.norm(d):
+        raise FitError("[view] explode must not be zero")
+    d = d / np.linalg.norm(d)
+    dist = float(view.get("explode_distance", 20))
+    along = []
+    for p in placed:
+        c = G.props(p.shape, "volume").CentreOfMass()
+        along.append(float(np.array([c.X(), c.Y(), c.Z()]) @ d))
+    rank = {i: k for k, i in enumerate(sorted(range(len(placed)), key=lambda i: along[i]))}
+    out = []
+    for i, p in enumerate(placed):
+        t = gp_Trsf()
+        t.SetTranslation(gp_Vec(*(d * dist * rank[i])))
+        out.append((p.name, moved(p.shape, t), p.color))
+    return out
 
 
 def export_assembly(placed: list[Placed], path: Path) -> Path:

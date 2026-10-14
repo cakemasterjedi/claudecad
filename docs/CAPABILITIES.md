@@ -12,8 +12,12 @@ new features get learned.
 | syntax, units, feature/parameter/enum check | local tracer | 0 |
 | geometry build, volume, hole sizes, render | local builder (OpenCascade) | 0 |
 | print check: overhangs flatter than 45° that are not on the bed | local (`fsgen studio check/build`) | 0 |
+| geometry check: valid B-rep, closed shell, positive volume, one solid, watertight STL mesh, per part | local (`fsgen studio check/build`) | 0 |
+| wall check: regions thinner than `--min-wall` (default 1.2 mm) by ray casting | local (`fsgen studio check/build`) | 0 |
+| per-part STEP/STL and 3MF (one object per part) | local (`fsgen studio build --formats step,stl,3mf`) | 0 |
 | fit check: parts in their assembled position, real components (STEP), hinge/slide motions | local (`fsgen studio fit`) | 0 |
-| interactive 3D viewer (print layout + assembly) | local HTML (`fsgen studio view`) | 0 |
+| cross-section PNG of the assembly (`[section]` plane in the fit file) | local (`fsgen studio fit`) | 0 |
+| interactive 3D viewer (print layout, assembly, exploded) | local HTML (`fsgen studio view`) | 0 |
 | repairs from script/local errors | local loop | 0 |
 | review (model looks at the local 4-view render) | local loop | 0 |
 | cost estimate before pushing (shown as calls and % of what's left) | local, from the feature diff | 0 |
@@ -123,6 +127,27 @@ overlap at each step: `free`, `snap` (small overlap near the closed position, go
 overlapping at the last step) or `collides`. An `expect` per motion turns it into a pass/fail check. Example:
 `examples/native/fit/lidded_box.fs` + `.fit.toml`. On a 7-part current clamp (hinge, latch, sleeves, covers,
 liner, the ferrite STEP, pin and wire) the check takes ~7 s.
+
+`fsgen studio fit` also writes `out/<name>/<name>_section.png`: every part and component in the assembled position
+cut by the plane of the fit file's `[section]` table (`origin`, `normal`; default the XZ plane), drawn as filled 2D
+areas, one colour per part. `fsgen studio view` adds an "Exploded" scene: parts spread along `[view] explode`
+(default Z) by `explode_distance` (default 20 mm) times their rank along it.
+
+## Geometry checks and exports (`fsgen/native/geomcheck.py`, `partexport.py`, `section.py`)
+
+`studio check|build` print, after the print check, one line per part: `geometry check: part 1 ok (valid B-rep,
+closed, watertight mesh, 1 solid)` or the problems (invalid B-rep, open edges, no volume, several solids, mesh edges
+not shared by exactly 2 triangles). Then the wall check: wall thickness is the distance along the inward normal to
+the first exit through the surface, from up to 4000 random surface points per part (numpy ray casting on a 0.05 mm
+mesh, ~0.6 s for a 36-face enclosure); thin points are grouped into regions (min thickness, area, location in
+mm). Rays that leave at a grazing angle are dropped, so fillets and chamfers do not show up as thin; features
+smaller than the ~1 mm sample spacing can be missed, and fine threads report their crests. `--min-wall MM`
+changes the limit.
+
+`studio build --formats step,stl,3mf` (default `step,stl`): the combined `<name>.step/.stl` as before; `3mf` adds
+`<name>.3mf` with one named object per part (mm). With more than one part, each part is also written as
+`<name>_<part>.<ext>` in its print layout position; part names come from the fit file (`[parts.<name>]`), else
+`part<N>`.
 
 
 ## Two ways to get a part into Onshape
