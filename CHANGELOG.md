@@ -13,10 +13,15 @@
 - **Section PNG** from `studio fit` (`out/<name>/<name>_section.png`): the assembled parts cut by the `[section]`
   plane of the fit file.
 - **Exploded scene** in `studio view` (`[view]` table in the fit file).
+- **`studio push --public`** (or `FSGEN_PUBLIC=1`): create fsgen's Onshape document as public. Free Onshape plans
+  refuse private documents (409); that error now says to use `--public` or `--document`.
 
 ### Changed
 
 - `studio build` exits 1 and exports nothing when a part fails the geometry check.
+- The local check refuses two things Onshape rejects or gets wrong: a `cPlane` with a negative offset (use a positive
+  offset and `oppositeDirection`), and a 3-point `skArc` whose mid point is under 0.01 mm off the start-end line
+  (Onshape's solver can flip it to the far side of its huge circle; use `skLineSegment`).
 
 ## 0.2.0 (2026-10-10)
 

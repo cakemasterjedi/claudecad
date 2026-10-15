@@ -243,7 +243,7 @@ def cmd_studio(args):
         return 1
     o = Onshape(purpose=f"studio push {path.name}")
     from .cloud import target_workspace
-    ws = target_workspace(o, args.document)
+    ws = target_workspace(o, args.document, public=args.public or None)
     st = nb.get_studio(o, args.name or path.stem, ws["did"], ws["wid"], fresh=args.fresh)
     r = nb.push_trace(o, st, tr)
     from .native import catalog
@@ -477,6 +477,8 @@ def main(argv=None):
     s.add_argument("--formats", default="step,stl", help="build: comma list of step,stl,3mf (several parts: one file "
                    "per part too, plus a combined 3MF with one object per part)")
     s.add_argument("--fit", help="fit/view: fit file (default: the script's name with .fit.toml)")
+    s.add_argument("--public", action="store_true", help="push: create fsgen's document as public (needed on free "
+                   "Onshape plans; anyone on Onshape can see it). Also FSGEN_PUBLIC=1")
     s.set_defaults(fn=cmd_studio)
 
     for name, fn, h in (("run", cmd_run, "build locally and export STEP/STL"),

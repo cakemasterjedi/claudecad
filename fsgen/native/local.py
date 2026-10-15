@@ -428,6 +428,9 @@ class LocalBuilder:
             raise KernelFailure(f"plane type {p['cplaneType'].name} not implemented locally")
         base = self.plane_of(p["entities"], f"plane \"{rec.name}\"")
         off = mag(p.get("offset", Q(0.025, (1, 0))))
+        if off < 0:
+            raise FSError(f"plane \"{rec.name}\": negative offset (Onshape rejects it: \"does not match its feature "
+                          "spec\"); use a positive offset with \"oppositeDirection\" : true")
         if p.get("oppositeDirection"):
             off = -off
         self.planes[rec.name] = Plane(base.origin + off * base.normal, base.normal, base.x)

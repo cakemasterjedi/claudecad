@@ -64,3 +64,63 @@ def test_feature_patterns_reapply_features_by_default():
     m = next(f for f in explicit.features if f.feature_type == "mirror")
     params = {p["parameterId"]: p for p in nb.feature_json(m, {g.name: "F" for g in explicit.features})["parameters"]}
     assert params["fullFeaturePattern"]["value"] is False  # an explicit choice in the script wins
+
+
+class _DocsApi:
+    """Records POST payloads; refuses private documents like a free Onshape plan."""
+    def __init__(self, free=False):
+        self.free, self.posts = free, []
+
+    def post(self, path, body):
+        from fsgen.onshape import OnshapeError
+        self.posts.append((path, body))
+        if path == "documents":
+            if self.free and not body["isPublic"]:
+                raise OnshapeError('POST documents -> 409: {"message" : "Free accounts only allow access to public '
+                                   'documents. Upgrade your account to get full access to private documents."}')
+            return {"id": "d1", "defaultWorkspace": {"id": "w1"}}
+        return {"id": path.split("/")[0]}
+
+    def get(self, path):
+        return [{"elementType": "PARTSTUDIO", "id": "p1"}]
+
+
+def test_new_document_is_private_unless_public_is_asked(tmp_path, monkeypatch):
+    from fsgen.cloud import ensure_workspace
+    monkeypatch.delenv("FSGEN_PUBLIC", raising=False)
+    api = _DocsApi()
+    ensure_workspace(api, state_file=tmp_path / "a.json")
+    ensure_workspace(api, state_file=tmp_path / "b.json", public=True)
+    monkeypatch.setenv("FSGEN_PUBLIC", "1")
+    ensure_workspace(api, state_file=tmp_path / "c.json")
+    assert [b["isPublic"] for p, b in api.posts if p == "documents"] == [False, True, True]
+
+
+def test_free_plan_refusal_says_how_to_push(tmp_path, monkeypatch):
+    import pytest
+    from fsgen.cloud import ensure_workspace
+    from fsgen.onshape import OnshapeError
+    monkeypatch.delenv("FSGEN_PUBLIC", raising=False)
+    with pytest.raises(OnshapeError, match="--public"):
+        ensure_workspace(_DocsApi(free=True), state_file=tmp_path / "s.json")
+    assert not (tmp_path / "s.json").exists()
+
+
+def _arc_script(mid_y):
+    return f"""FeatureScript 3083;
+import(path : "onshape/std/common.fs", version : "3083.0");
+export function build(context is Context, id is Id)
+{{
+    var sk = newSketch(context, id + "S", {{ "sketchPlane" : qCreatedBy(makeId("Front"), EntityType.FACE) }});
+    skArc(sk, "a", {{ "start" : vector(26.3, 1.463) * millimeter, "mid" : vector(29.9, {mid_y}) * millimeter,
+                     "end" : vector(33.5, 1.253) * millimeter }});
+    skSolve(sk);
+}}
+"""
+
+
+def test_nearly_straight_arc_is_refused_with_a_hint():
+    from fsgen.native.script import trace
+    flat = trace(_arc_script(1.364))           # 0.006 mm off the chord: Onshape flipped this one
+    assert not flat.ok and "nearly straight" in flat.error and "skLineSegment" in flat.error
+    assert trace(_arc_script(1.5)).ok          # clearly curved

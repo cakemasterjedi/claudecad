@@ -6,6 +6,12 @@
       "variable(context, name, value): by default all variables go into one Variable Studio (3 calls total); FSGEN_VARIABLES=tree makes Variable features in the tree (1 call each)."
     ]
   },
+  "booleanBodies": {
+    "status": "learned",
+    "example": "booleanBodies(context, id + \"Pocket\", { \"operationType\" : BooleanOperationType.SUBTRACTION,\n        \"targets\" : part, \"tools\" : toolBody });",
+    "learnedFrom": "a push on 2026-10-14 (tool body from extrude NEW/ADD/INTERSECT, then subtracted)",
+    "date": "2026-10-14"
+  },
   "cPlane": {
     "status": "verified",
     "example": "examples/native/enclosure.fs",
