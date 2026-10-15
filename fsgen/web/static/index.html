@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fsgen</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<section id="login" class="login" hidden>
+  <form id="login-form" class="card">
+    <h1>fsgen</h1>
+    <label for="password">Password</label>
+    <input id="password" type="password" autocomplete="current-password" required>
+    <button type="submit">Log in</button>
+    <p id="login-error" class="error" role="alert"></p>
+  </form>
+</section>
+<div id="app" hidden>
+  <header class="bar">
+    <strong class="brand">fsgen</strong>
+    <nav id="tabs" aria-label="Sections"></nav>
+    <button id="logout" class="ghost" type="button">Log out</button>
+  </header>
+  <main id="panels"></main>
+</div>
+<script defer src="/static/app.js"></script>
+<script defer src="/static/usage.js"></script>
+<script defer src="/static/parts.js"></script>
+<script defer src="/static/generate.js"></script>
+</body>
+</html>

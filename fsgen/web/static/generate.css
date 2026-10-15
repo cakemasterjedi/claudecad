@@ -1,0 +1,15 @@
+.gen label { display:block; font-weight:600; margin-top:.4rem; }
+.gen textarea { width:100%; min-height:7rem; padding:.6rem; margin:.25rem 0 .5rem; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--fg); font:inherit; resize:vertical; }
+.gen .check { display:flex; align-items:center; gap:.5rem; font-weight:400; margin:.5rem 0; }
+.gen .check input { width:auto; margin:0; }
+.gen details { margin:.5rem 0 .8rem; }
+.gen details summary { cursor:pointer; color:var(--muted); padding:.3rem 0; }
+.gen .row { display:flex; gap:.75rem; }
+.gen .row > div { flex:1; min-width:0; }
+.gen .note { font-size:.9rem; margin:.6rem 0 0; }
+.gen .status { display:flex; justify-content:space-between; gap:.5rem; margin-bottom:.5rem; }
+.gen .log { max-height:55vh; overflow:auto; margin:0; padding:.6rem; background:var(--bg); border:1px solid var(--line); border-radius:8px; font:12px/1.4 ui-monospace,Menlo,Consolas,monospace; white-space:pre-wrap; word-break:break-word; }
+.gen .ok { color:#1e8e3e; font-weight:600; }
+.gen .bad { color:var(--bad); font-weight:600; }
+.gen .assume { white-space:pre-wrap; margin:.3rem 0 .6rem; }
+.gen .path { font-family:ui-monospace,Menlo,Consolas,monospace; word-break:break-all; }

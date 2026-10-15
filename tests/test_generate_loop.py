@@ -95,3 +95,24 @@ def test_any_cli_llm_can_be_the_designer(run, tmp_path, monkeypatch):
     res = gen.generate_native("a plate", tmp_path / "out2", name="Plate", paste=True,
                               llm_command=f"{sys.executable} {fake}")
     assert res["ok"] and res["verified"] and res["api_calls"] == 0
+
+
+def test_on_log_receives_messages_and_runs_in_threads_stay_separate(tmp_path, monkeypatch, capsys):
+    import threading
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(gen, "render", lambda *a, **k: None)
+    monkeypatch.setattr(gen, "make_llm", lambda *a, **k: FakeLLM(["Assumptions:\n- x\n\n" + block(PLATE), "ok\nLGTM"]))
+    logs = {"a": [], "b": []}
+
+    def work(tag):
+        gen.generate_native(f"plate {tag}", tmp_path / tag, name=tag, paste=True, on_log=logs[tag].append)
+    ts = [threading.Thread(target=work, args=(t,)) for t in logs]
+    [t.start() for t in ts]
+    [t.join() for t in ts]
+    for tag, other in (("a", "b"), ("b", "a")):
+        text = "\n".join(logs[tag])
+        assert "backend=fake" in text and "paste mode: no Onshape calls" in text
+        assert str(tmp_path / tag) in text and str(tmp_path / other) not in text
+    assert capsys.readouterr().out == ""  # nothing printed when a sink is given
+    gen.log("direct")  # no run active: falls back to printing
+    assert capsys.readouterr().out == "[fsgen] direct\n"
