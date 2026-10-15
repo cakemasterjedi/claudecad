@@ -60,21 +60,28 @@ def known_target(document: str | None = None, state_file: Path = STATE_FILE) -> 
     return json.loads(state_file.read_text()) if state_file.exists() else None
 
 
-def target_workspace(o: Onshape, document: str | None = None, state_file: Path = STATE_FILE) -> dict:
+def target_workspace(o: Onshape, document: str | None = None, state_file: Path = STATE_FILE,
+                     public: bool | None = None) -> dict:
     """Document to build in: an existing one (--document URL / FSGEN_DOCUMENT, e.g. a company-owned public
-    document or a branch of it) or fsgen's own private document (created once, 4 calls)."""
-    return known_target(document, state_file) or workspace_ids(o, state_file)
+    document or a branch of it) or fsgen's own document (created once, 4 calls; private unless public)."""
+    return known_target(document, state_file) or workspace_ids(o, state_file, public)
 
 
-def workspace_ids(o: Onshape, state_file: Path = STATE_FILE) -> dict:
+def workspace_ids(o: Onshape, state_file: Path = STATE_FILE, public: bool | None = None) -> dict:
     """{did, wid, ...} of the fsgen document: read from the state file (0 calls) or create it once (4 calls)."""
     if state_file.exists():
         return json.loads(state_file.read_text())
-    return ensure_workspace(o, state_file=state_file).__dict__
+    return ensure_workspace(o, state_file=state_file, public=public).__dict__
+
+
+def public_documents(public: bool | None = None) -> bool:
+    """New fsgen documents are public with --public or FSGEN_PUBLIC=1 (free Onshape plans only allow public ones)."""
+    import os
+    return public if public is not None else os.environ.get("FSGEN_PUBLIC", "") in ("1", "true", "yes")
 
 
 def ensure_workspace(o: Onshape, name: str = "fsgen-workspace", state_file: Path = STATE_FILE,
-                     fresh: bool = False) -> Workspace:
+                     fresh: bool = False, public: bool | None = None) -> Workspace:
     if state_file.exists() and not fresh:
         ws = Workspace(**{**json.loads(state_file.read_text()), "state_file": str(state_file)})
         try:
@@ -82,7 +89,15 @@ def ensure_workspace(o: Onshape, name: str = "fsgen-workspace", state_file: Path
             return ws
         except OnshapeError:
             pass
-    doc = o.post("documents", {"name": name, "isPublic": False})
+    public = public_documents(public)
+    try:
+        doc = o.post("documents", {"name": name, "isPublic": public})
+    except OnshapeError as e:
+        if not public and "only allow access to public documents" in str(e):
+            raise OnshapeError(f"{e}\nThis Onshape plan only allows public documents: rerun with --public (or set "
+                               "FSGEN_PUBLIC=1) to create a public one, which anyone on Onshape can see, or build in "
+                               "an existing document with --document URL.") from e
+        raise
     did, wid = doc["id"], doc["defaultWorkspace"]["id"]
     els = o.get(f"documents/d/{did}/w/{wid}/elements")
     part = next(e["id"] for e in els if e["elementType"] == "PARTSTUDIO")

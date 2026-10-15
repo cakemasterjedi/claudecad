@@ -381,3 +381,17 @@ A Claude agent in another project built a part with fsgen and reported what got 
 - 3MF: build123d `Mesher` (lib3mf 2.5). It writes an extra empty component object per mesh (harmless, build items
   are the parts). **lib3mf resets the process locale to "C"**, after which `Path.write_text` of non-ASCII text
   fails; `partexport` restores the locale after writing.
+
+## 2026-10-14: first push from a free Onshape plan (73 calls)
+
+- `POST documents` with `isPublic: false` -> 409 "Free accounts only allow access to public documents". The 4xx is
+  free. Added `--public` / `FSGEN_PUBLIC=1`; the default stays private.
+- `cPlane` with `"offset" : -2.65 mm` -> 400 "Parameter offset in feature ... of type Plane does not match its feature
+  spec". Onshape wants a positive offset and `"oppositeDirection" : true`; the local builder had accepted the negative
+  value. The push stopped at feature 16 of 60 (24 calls); the rerun reused those 16.
+- A 3-point arc 7.2 mm long with its mid point 0.006 mm off the chord (radius about 1 m, a revolved dome ring) built
+  correctly locally but Onshape's sketch solver flipped it to the other side of its circle: the revolve made a
+  ~330 mm disc (95,064 mm3 instead of 2,912 mm3). Found by comparing `--metrics` per-part volumes with the local
+  build (housing and plain plate matched to 0.1 mm3) and `--view`. A line instead of the arc fixed it; total volume
+  then matched (21,088.24 vs 21,088.3 mm3). The trace now refuses arcs under 0.01 mm off the chord.
+- Cost: 24 (failed run) + 44 (rest) + 3 x 1 (metrics, per-part metrics, view) + 3 (fix + metrics) = about 73 calls.

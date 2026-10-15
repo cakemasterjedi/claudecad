@@ -373,6 +373,11 @@ class Tracer:
             geo = _arc_geom(s_.a, mid.a, e_.a)
             if geo is None:
                 raise FSError("skArc: start, mid and end are collinear")
+            off = _off_chord(s_.a, mid.a, e_.a)
+            if off < MIN_ARC_SAGITTA:
+                raise FSError(f"skArc \"{ename}\": nearly straight (mid point {off * 1000:.4f} mm off the start-end "
+                              f"line, radius {geo['r'] * 1000:.0f} mm). Onshape's sketch solver can flip an arc this "
+                              "flat to the far side of its circle; use skLineSegment")
             sk.entities.append(SketchEntity("arc", ename, {**geo, "p0": s_, "p1": e_}, constr(m)))
 
         @fn("skPolyline")
@@ -483,6 +488,16 @@ def _absdiff(a, b):
     if mag(d) < 0:
         d = add(b, a, None, sign=-1)
     return d
+
+
+MIN_ARC_SAGITTA = 1e-5      # m: 3-point arcs flatter than this are refused (Onshape flipped one; see FINDINGS.md)
+
+
+def _off_chord(s, m, e) -> float:
+    """Distance of the mid point from the start-end line."""
+    (ax, ay), (bx, by), (cx, cy) = s, m, e
+    chord = math.hypot(cx - ax, cy - ay)
+    return abs((cx - ax) * (by - ay) - (cy - ay) * (bx - ax)) / chord if chord else 0.0
 
 
 def _arc_geom(s, m, e):
