@@ -15,5 +15,8 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 include = ["fsgen*"]
 
+[tool.setuptools.package-data]
+"fsgen.web" = ["static/*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

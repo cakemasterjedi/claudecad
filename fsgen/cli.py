@@ -328,6 +328,55 @@ def cmd_usage(args):
     return 0
 
 
+def lan_addresses() -> list[str]:
+    """This machine's non-loopback IPv4 addresses (no traffic is sent)."""
+    import socket
+
+    found = []
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))  # UDP connect only picks the outgoing interface
+            found.append(s.getsockname()[0])
+    except OSError:
+        pass
+    try:
+        found += socket.gethostbyname_ex(socket.gethostname())[2]
+    except OSError:
+        pass
+    return sorted({a for a in found if not a.startswith("127.") and a != "0.0.0.0"})
+
+
+def cmd_web(args):
+    """Serve the LAN web UI."""
+    import os
+    import secrets
+
+    from .web.server import make_server
+
+    sys.stdout.reconfigure(line_buffering=True)  # show the URLs and password at once when piped to a file
+    password = args.password or os.environ.get("FSGEN_WEB_PASSWORD")
+    generated = not password
+    if generated:
+        password = secrets.token_urlsafe(9)
+    httpd, app = make_server(Path(args.root), args.host, args.port, password)
+    port = httpd.server_address[1]
+    print(f"fsgen web on http://127.0.0.1:{port}/  (root: {app.root})")
+    if args.host in ("0.0.0.0", "", "::"):
+        for a in lan_addresses():
+            print(f"  LAN: http://{a}:{port}/")
+    if generated:
+        print(f"password (shown once): {password}")
+    print("WARNING: plain HTTP. Anyone on the network can see the traffic, including the password. "
+          "Use only on a trusted network.")
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\nshutting down")
+    finally:
+        httpd.server_close()
+    return 0
+
+
 def cmd_features(args):
     from .native import catalog
     from .native.script import SPECS
@@ -511,6 +560,13 @@ def main(argv=None):
     us.add_argument("--set-official", type=int, metavar="N",
                     help="record Onshape's official used count (e.g. from the MCP get_api_usage tool) as the baseline")
     us.set_defaults(fn=cmd_usage)
+
+    w = sub.add_parser("web", help="LAN web UI (usage, scripts, generation); plain HTTP, password protected")
+    w.add_argument("--host", default="0.0.0.0")
+    w.add_argument("--port", type=int, default=8770)
+    w.add_argument("--password", help="default: $FSGEN_WEB_PASSWORD, else a random one printed at start")
+    w.add_argument("--root", default=".", help="project folder to serve (default: current directory)")
+    w.set_defaults(fn=cmd_web)
 
     fe = sub.add_parser("features", help="feature catalog: verified / learned / available")
     fe.add_argument("feature", nargs="?", help="show one feature type with its settable parameters")

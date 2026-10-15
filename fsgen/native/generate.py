@@ -1,10 +1,12 @@
 """Prompt -> Part Studio script -> native Onshape feature tree (repair + review loop) -> exports."""
 from __future__ import annotations
 
+import contextvars
 import json
 import re
 import time
 from pathlib import Path
+from typing import Callable
 
 from ..llm import make_llm
 from ..onshape import Onshape, OnshapeError
@@ -21,8 +23,9 @@ class Heartbeat:
               "repair-script": "LLM is fixing a script error", "repair-local": "LLM is fixing a local build error",
               "repair-onshape": "LLM is fixing an Onshape error", "repair": "LLM is retrying"}
 
-    def __init__(self, interval: float = 10.0):
+    def __init__(self, interval: float = 10.0, emit: Callable[[str], None] | None = None):
         import threading
+        self.emit = emit or _print_line
         self.interval, self.t0 = interval, time.time()
         self.stage, self.stage_t0, self.last_print = "starting", time.time(), time.time()
         self.calls = lambda: 0
@@ -44,23 +47,47 @@ class Heartbeat:
             now = time.time()
             if now - self.last_print >= self.interval:
                 total = int(now - self.t0)
-                print(f"[fsgen] … {total // 60:02d}:{total % 60:02d} elapsed | {self.stage} "
-                      f"({now - self.stage_t0:.0f} s) | Onshape calls so far: {self.calls()}", flush=True)
+                self.emit(f"… {total // 60:02d}:{total % 60:02d} elapsed | {self.stage} "
+                          f"({now - self.stage_t0:.0f} s) | Onshape calls so far: {self.calls()}")
                 self.last_print = now
 
 
-_HEARTBEAT: Heartbeat | None = None
+def _print_line(msg: str) -> None:
+    print(f"[fsgen] {msg}", flush=True)
+
+
+class _Run:
+    """Per-run logging state: where messages go and the run's heartbeat."""
+
+    def __init__(self, sink: Callable[[str], None] | None):
+        self.sink = sink or _print_line
+        self.heartbeat: Heartbeat | None = None
+
+
+_RUN: contextvars.ContextVar[_Run | None] = contextvars.ContextVar("fsgen_generate_run", default=None)
 
 
 def log(msg):
-    print(f"[fsgen] {msg}", flush=True)
-    if _HEARTBEAT is not None:
-        _HEARTBEAT.last_print = time.time()
+    run = _RUN.get()
+    (run.sink if run else _print_line)(msg)
+    if run is not None and run.heartbeat is not None:
+        run.heartbeat.last_print = time.time()
 
 
 def stage(name: str):
-    if _HEARTBEAT is not None:
-        _HEARTBEAT.set(name)
+    run = _RUN.get()
+    if run is not None and run.heartbeat is not None:
+        run.heartbeat.set(name)
+
+
+class _OfflineOnshape:
+    """Stand-in client for paste mode without Onshape keys: paste mode makes no calls."""
+    calls = 0
+    by_endpoint: dict = {}
+    budget = 0
+
+    def summary(self) -> str:
+        return "Onshape API calls this run: 0"
 
 
 def extract_script(text: str) -> str | None:
@@ -126,19 +153,40 @@ def _existing_state(name, document=None):
 def generate_native(request: str, out_dir: Path | None = None, name: str | None = None, backend: str = "auto",
                     model: str | None = None, max_fixes: int = 5, review_rounds: int = 2,
                     export_formats: tuple = (), budget: int | None = None, paste: bool = False,
-                    web: bool = True, llm_command: str | None = None, document: str | None = None) -> dict:
+                    web: bool = True, llm_command: str | None = None, document: str | None = None,
+                    on_log: Callable[[str], None] | None = None) -> dict:
+    """`on_log(msg)` receives every progress line (default: print with the "[fsgen] " prefix); it is per run, so
+    several runs in different threads keep separate logs."""
+    run = _Run(on_log)
+    token = _RUN.set(run)
+    try:
+        return _generate_native(run, request, out_dir, name, backend, model, max_fixes, review_rounds,
+                                export_formats, budget, paste, web, llm_command, document)
+    finally:
+        if run.heartbeat is not None:
+            run.heartbeat.stop()
+        _RUN.reset(token)
+
+
+def _generate_native(run, request, out_dir, name, backend, model, max_fixes, review_rounds, export_formats, budget,
+                     paste, web, llm_command, document) -> dict:
     llm = make_llm(backend, model, web=web, command=llm_command)
     label = re.sub(r"[^a-z0-9]+", "-", (name or studio_name(request)).lower()).strip("-") or "part"
     out_dir = out_dir or Path("out") / "native" / f"{time.strftime('%Y%m%d-%H%M%S')}-{label}"
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "request.txt").write_text(request)
     system = prompts.system_prompt()
-    o = Onshape(budget=budget, purpose=f"generate: {request[:60]}")
+    try:
+        o = Onshape(budget=budget, purpose=f"generate: {request[:60]}")
+    except OnshapeError:
+        if not paste:
+            raise
+        o = _OfflineOnshape()  # paste mode never calls Onshape, so it needs no keys
     ws = None  # the fsgen Onshape document; looked up (or created once) only when pushing
     st = None  # the Part Studio is created only when a locally verified script is ready (saves calls)
-    global _HEARTBEAT
-    _HEARTBEAT = Heartbeat(10.0).start()
-    _HEARTBEAT.calls = lambda: o.calls
+    run.heartbeat = Heartbeat(10.0, run.sink)
+    run.heartbeat.calls = lambda: o.calls
+    run.heartbeat.start()
     log(f"backend={llm.name}; local-first: Onshape is called once the script builds and passes review locally")
     history = []
     n = 0
@@ -308,7 +356,6 @@ def generate_native(request: str, out_dir: Path | None = None, name: str | None 
     result["api_calls"] = o.calls
     result["api_calls_by_endpoint"] = o.by_endpoint
     log(o.summary())
-    _HEARTBEAT.stop()
-    _HEARTBEAT = None
+    run.heartbeat.stop()
     (out_dir / "result.json").write_text(json.dumps(result, indent=2, default=str))
     return result

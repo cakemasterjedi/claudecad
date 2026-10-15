@@ -129,6 +129,26 @@ Other assistants (Codex, Cursor, Copilot, Gemini CLI, …) read the same workflo
 
 To paste: create a Feature Studio in Onshape, paste the file, and insert the feature in a Part Studio.
 
+## Web UI
+
+```bash
+.venv/bin/fsgen web                      # http://127.0.0.1:8770/ plus the LAN URLs it prints
+.venv/bin/fsgen web --port 8771 --password secret --root path/to/project
+```
+
+The password is `--password`, else `$FSGEN_WEB_PASSWORD`, else a random one printed once at start. Open the LAN
+URL on your phone. **It is plain HTTP**: anyone on the network can see the traffic, so use it only on a trusted
+network. Failed logins are rate limited. It serves the `.fs` files under `--root` (default: the current folder).
+
+- **Parts**: open, edit and save scripts; *Save & check* runs the same check as `fsgen studio check` (0 Onshape
+  calls, in a separate process with a 60 s limit) and shows the report, geometry and wall checks and a 3D preview
+  (As printed, plus Assembled when a fit file is next to the script). The 3D view loads three.js from a CDN, so the
+  phone needs internet.
+- **Generate**: describe a part; Claude writes the script and fsgen checks and reviews it locally (paste mode, 0
+  Onshape calls). One job at a time; the log streams live and you can reconnect. The script is saved as
+  `<name>.fs` in the root (never overwritten), working files in `out/web/`.
+- **Usage**: the same numbers as `fsgen usage` (read-only).
+
 ## Which AI?
 
 fsgen is not tied to one model: the AI only has to write a text file (the Part Studio script); checking,
