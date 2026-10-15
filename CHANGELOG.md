@@ -4,6 +4,10 @@
 
 ### Added
 
+- **`fsgen web`**: LAN web UI (stdlib server, password login, CSRF header, security headers; plain HTTP, for trusted
+  networks only). Tabs: **Parts** (edit, save, check in a worker process, 3D preview), **Generate** (prompt to
+  part with a live log, paste mode, 0 Onshape calls, one job at a time), **Usage** (read-only API usage).
+- `generate_native(..., on_log=)`: per-run progress sink (several runs in threads keep separate logs).
 - **Geometry check** in `studio check` / `build`: per part, valid B-rep, closed shell, positive volume, one solid,
   watertight STL mesh.
 - **Wall check** (`--min-wall`, default 1.2 mm): regions thinner than the limit, by ray casting; skips grazing hits
@@ -17,6 +21,7 @@
 ### Changed
 
 - `studio build` exits 1 and exports nothing when a part fails the geometry check.
+- `fsgen generate --paste` no longer needs Onshape keys (paste mode makes no calls).
 
 ## 0.2.0 (2026-10-10)
 
