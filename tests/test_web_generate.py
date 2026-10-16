@@ -23,7 +23,7 @@ class FakeLLM:
     def __init__(self, gate=None):
         self.gate, self.prompts = gate, []
 
-    def complete(self, system, prompt, image=None):
+    def complete(self, system, prompt, image=None, images=()):
         self.prompts.append(prompt)
         if self.gate is not None:
             assert self.gate.wait(20)

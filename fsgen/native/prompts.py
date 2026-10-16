@@ -148,13 +148,31 @@ def system_prompt() -> str:
     return "\n".join(parts)
 
 
-def generate_prompt(request: str, mode_note: str = "") -> str:
+def generate_prompt(request: str, mode_note: str = "", has_images: bool = False) -> str:
     return (f"Design request:\n{request.strip()}\n\n" + (f"{mode_note.strip()}\n\n" if mode_note else "")
+            + ("Reference photos/sketches of the part are attached; use their dimensions where the request does "
+               "not state them.\n\n" if has_images else "")
             + "Before the code, write a section headed exactly `Assumptions:` listing every dimension, size or "
             "interpretation you chose that the request does not state explicitly (e.g. bit size, wall thickness, "
             "clearances, which part goes where), with the value you used. If the request names a real product and "
             "you can look it up, say what you found and where. Then plan the feature tree in 3-8 short bullets "
             "(variables, sketch planes and coordinates, feature order), then give the complete script.")
+
+
+def measure_prompt(note: str = "") -> tuple[str, str]:
+    """(system, prompt) for reading measurements from photos or dimensioned sketches of one part."""
+    system = ("You read measurements from photos and technical sketches of physical parts for a CAD designer. "
+              "Be precise, never invent a written dimension, and keep to the units shown.")
+    prompt = ("The attached images are photos or dimensioned sketches of one physical part. "
+              "Read every written dimension and say what it measures (which view, which edge). "
+              "Describe the overall shape and its features (holes, tubes, arcs, slants). "
+              "Give estimated sizes for features that have no written dimension and mark each one \"(estimated)\". "
+              "Mark any reading you cannot make out clearly \"(unsure)\". "
+              "Output a plain-text bullet list that a CAD designer can paste into a part request. "
+              "No code and no preamble.")
+    if note and note.strip():
+        prompt += f"\n\nNote from the user:\n{note.strip()}"
+    return system, prompt
 
 
 def repair_prompt(request: str, code: str, error: str, where: str) -> str:
@@ -167,7 +185,7 @@ def review_prompt(request: str, code: str, report: str, not_built: list[str] | N
                   previous_review: str | None = None) -> str:
     parts = [f"Design request:\n{request.strip()}\n\nScript:\n```featurescript\n{code.strip()}\n```\n\n"
              f"It builds locally. Result:\n{report}\n\nThe attached image shows four views (iso, front, top, right) "
-             "of the locally built geometry."]
+             "of the locally built geometry (a rendered preview of the current script, not a photo of the part)."]
     if not_built:
         parts.append("IMPORTANT: these features were NOT built locally, so they are NOT in the image or the "
                      "measurements: " + "; ".join(not_built) + ". Do not approve them from the image. Check only "

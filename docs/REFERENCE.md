@@ -75,6 +75,11 @@ references stay at their Onshape defaults. `fsgen features --refresh` re-downloa
 3. Otherwise the logged-in `claude` CLI (`claude -p`, no API key needed); it may use web search
    (`--no-web` to turn off) and reads the preview image with its Read tool.
 
+`--backend ollama` (never chosen by `auto`) runs a local model through the Ollama HTTP API (text and images, no
+extra packages). `OLLAMA_HOST` (default `http://localhost:11434`) and `FSGEN_OLLAMA_MODEL` (default
+`gemma4:12b-it-qat`) configure it; thinking is off (faster, and a long think can leave the answer empty)
+unless `FSGEN_OLLAMA_THINK=1`; `FSGEN_LLM_TIMEOUT` (default 1800 s) applies to all backends.
+
 In a chat, any coding assistant can be the designer instead: see `AGENTS.md`.
 
 ## Commands
