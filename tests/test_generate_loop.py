@@ -18,7 +18,7 @@ class FakeLLM:
     def __init__(self, replies):
         self.replies, self.prompts = list(replies), []
 
-    def complete(self, system, prompt, image=None):
+    def complete(self, system, prompt, image=None, images=()):
         self.prompts.append(prompt)
         return self.replies.pop(0)
 

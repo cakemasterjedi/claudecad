@@ -44,7 +44,7 @@ from pathlib import Path
 from urllib.parse import parse_qsl, unquote, urlsplit
 
 COOKIE = "fsgen_session"
-MAX_BODY = 1_000_000
+MAX_BODY = 5_000_000
 SESSION_IDLE = 12 * 3600
 LOGIN_MAX_FAILS = 5
 LOGIN_WINDOW = 600
@@ -282,7 +282,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not chunk:
                     break
                 left -= len(chunk)
-            raise HTTPError(413, "request body too large (max 1 MB)")
+            raise HTTPError(413, f"request body too large (max {MAX_BODY // 1_000_000} MB)")
         if n == 0:
             return None
         raw = self.rfile.read(n)

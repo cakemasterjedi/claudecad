@@ -147,6 +147,12 @@ network. Failed logins are rate limited. It serves the `.fs` files under `--root
 - **Generate**: describe a part; Claude writes the script and fsgen checks and reviews it locally (paste mode, 0
   Onshape calls). One job at a time; the log streams live and you can reconnect. The script is saved as
   `<name>.fs` in the root (never overwritten), working files in `out/web/`.
+- **Photos** (Generate tab): upload up to 4 photos or dimensioned sketches of the part (jpeg/png/webp, 3 MB each).
+  *Read measurements* extracts the dimensions into the request box, locally with Ollama when the configured model is
+  installed (`OLLAMA_HOST`, `FSGEN_OLLAMA_MODEL`), else with Claude; the photos are also sent to the generate
+  stage. API: `POST /api/uploads {filename, data(base64)}` -> `{id, type}`; `GET /api/llm`;
+  `POST /api/measure {images, note?, backend?}` -> `{text, backend, seconds}`; `POST /api/generate` accepts
+  `images: [ids]`.
 - **Usage**: the same numbers as `fsgen usage` (read-only).
 
 ## Which AI?

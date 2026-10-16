@@ -6,7 +6,7 @@ import json
 import re
 import time
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Sequence
 
 from ..llm import make_llm
 from ..onshape import Onshape, OnshapeError
@@ -154,14 +154,14 @@ def generate_native(request: str, out_dir: Path | None = None, name: str | None 
                     model: str | None = None, max_fixes: int = 5, review_rounds: int = 2,
                     export_formats: tuple = (), budget: int | None = None, paste: bool = False,
                     web: bool = True, llm_command: str | None = None, document: str | None = None,
-                    on_log: Callable[[str], None] | None = None) -> dict:
+                    on_log: Callable[[str], None] | None = None, images: Sequence[Path] = ()) -> dict:
     """`on_log(msg)` receives every progress line (default: print with the "[fsgen] " prefix); it is per run, so
     several runs in different threads keep separate logs."""
     run = _Run(on_log)
     token = _RUN.set(run)
     try:
         return _generate_native(run, request, out_dir, name, backend, model, max_fixes, review_rounds,
-                                export_formats, budget, paste, web, llm_command, document)
+                                export_formats, budget, paste, web, llm_command, document, tuple(images))
     finally:
         if run.heartbeat is not None:
             run.heartbeat.stop()
@@ -169,7 +169,7 @@ def generate_native(request: str, out_dir: Path | None = None, name: str | None 
 
 
 def _generate_native(run, request, out_dir, name, backend, model, max_fixes, review_rounds, export_formats, budget,
-                     paste, web, llm_command, document) -> dict:
+                     paste, web, llm_command, document, images=()) -> dict:
     llm = make_llm(backend, model, web=web, command=llm_command)
     label = re.sub(r"[^a-z0-9]+", "-", (name or studio_name(request)).lower()).strip("-") or "part"
     out_dir = out_dir or Path("out") / "native" / f"{time.strftime('%Y%m%d-%H%M%S')}-{label}"
@@ -191,11 +191,12 @@ def _generate_native(run, request, out_dir, name, backend, model, max_fixes, rev
     history = []
     n = 0
 
-    def ask(stage_name, prompt, image=None):
+    def ask(stage_name, prompt, image=None, images=()):
         nonlocal n
         t0 = time.time()
         stage(stage_name)
-        text = llm.complete(system, prompt, image=image)
+        extra = {"images": list(images)} if images else {}
+        text = llm.complete(system, prompt, image=image, **extra)
         (out_dir / f"llm_{n:02d}_{stage_name}.md").write_text(f"# prompt\n\n{prompt}\n\n# response\n\n{text}")
         n += 1
         log(f"{stage_name}: LLM answered in {time.time() - t0:.0f}s")
@@ -207,9 +208,11 @@ def _generate_native(run, request, out_dir, name, backend, model, max_fixes, rev
         if fixes >= max_fixes:
             return None
         fixes += 1
-        return ask(stage, prompts.repair_prompt(request, code, error, where))[1]
+        return ask(stage, prompts.repair_prompt(request, code, error, where), images=images)[1]
 
-    text, code = ask("generate", prompts.generate_prompt(request, mode_note(paste)))
+    if images:
+        log(f"reference images: {len(images)}")
+    text, code = ask("generate", prompts.generate_prompt(request, mode_note(paste), bool(images)), images=images)
     assumptions = extract_assumptions(text)
     if assumptions:
         (out_dir / "assumptions.md").write_text(f"# Assumptions for: {request}\n\n{assumptions}\n")

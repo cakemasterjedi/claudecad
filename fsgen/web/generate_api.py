@@ -1,6 +1,6 @@
 """Generate tab API: prompt -> part via `generate_native` in paste mode (0 Onshape calls), run in a background thread.
 
-POST /api/generate               {request, name?, web_search?, max_fixes?, review_rounds?} -> {"id"} (409 if busy)
+POST /api/generate               {request, name?, web_search?, max_fixes?, review_rounds?, images?: [upload ids]} -> {"id"} (409 if busy)
 GET  /api/generate/current       -> latest job summary or {"job": null}
 GET  /api/generate/{id}/events   -> SSE: `log` {i, text} (from ?from=N), then `done` {status, result}
 """
@@ -15,6 +15,7 @@ from pathlib import Path
 
 from .paths import resolve_in_root
 from .server import HTTPError, route
+from .uploads_api import upload_paths
 
 MAX_LOG_LINES = 5000
 MAX_JOBS = 10
@@ -36,9 +37,9 @@ def _clamp(v, lo, hi, default) -> int:
 
 
 class Job:
-    def __init__(self, request: str, name: str):
+    def __init__(self, request: str, name: str, images: int = 0):
         self.id = uuid.uuid4().hex[:12]
-        self.request, self.name = request, name
+        self.request, self.name, self.images = request, name, images
         self.status = "running"
         self.started, self.finished = time.time(), None
         self.lines: list[str] = []
@@ -63,7 +64,7 @@ class Job:
 
     def summary(self) -> dict:
         with self.cond:
-            return {"id": self.id, "request": self.request, "name": self.name, "status": self.status,
+            return {"id": self.id, "request": self.request, "name": self.name, "images": self.images, "status": self.status,
                     "started": self.started, "finished": self.finished, "result": self.result,
                     "log_lines": self.dropped + len(self.lines)}
 
@@ -82,12 +83,12 @@ def _unique_script(root: Path, name: str) -> Path:
         n += 1
 
 
-def _run(job: Job, root: Path, out_dir: Path, opts: dict) -> None:
+def _run(job: Job, root: Path, out_dir: Path, opts: dict, images: list[Path] = ()) -> None:
     from ..native import generate as gen
     try:
         res = gen.generate_native(job.request, out_dir, name=job.name, paste=True, budget=0, export_formats=(),
                                   web=opts["web_search"], max_fixes=opts["max_fixes"],
-                                  review_rounds=opts["review_rounds"], on_log=job.log)
+                                  review_rounds=opts["review_rounds"], on_log=job.log, images=images)
         calls = res.get("api_calls") or 0
         if calls:
             job.log(f"WARNING: {calls} Onshape API call(s) were made; a local generation should make 0. Check usage.")
@@ -129,14 +130,16 @@ def start(req):
     opts = {"web_search": ws if isinstance(ws, bool) else True,
             "max_fixes": _clamp(b.get("max_fixes"), 0, 8, 4), "review_rounds": _clamp(b.get("review_rounds"), 0, 3, 2)}
     root = req.app.root
+    ids = b.get("images")
+    images = upload_paths(root, ids) if ids else []
     with _LOCK:
         if any(j.status == "running" for j in _JOBS):
             raise HTTPError(409, "a generation is already running")
-        job = Job(text, name)
+        job = Job(text, name, len(images))
         out_dir = resolve_in_root(root, f"out/web/{time.strftime('%Y%m%d-%H%M%S')}-{name}", suffixes=None)
         _JOBS.append(job)
         del _JOBS[:-MAX_JOBS]
-    threading.Thread(target=_run, args=(job, root, out_dir, opts), daemon=True, name=f"generate-{job.id}").start()
+    threading.Thread(target=_run, args=(job, root, out_dir, opts, images), daemon=True, name=f"generate-{job.id}").start()
     return {"id": job.id}
 
 

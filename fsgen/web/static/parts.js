@@ -30,15 +30,16 @@
     const saveBtn = el("button", {type: "button", "class": "ghost", disabled: ""}, "Save");
     const checkBtn = el("button", {type: "button", disabled: ""}, "Save & check");
     const notice = el("div", {"class": "p-notice", role: "alert", hidden: ""});
+    const gutter = el("pre", {"class": "p-gutter", "aria-hidden": "true"}, "1");
     const editCard = el("div", {"class": "card p-editcard"},
-      el("div", {"class": "p-row"}, el("h2", {}, "Editor"), el("div", {"class": "p-actions"}, saveBtn, checkBtn)),
-      el("div", {"class": "p-row p-sub"}, title, dirtyMark), notice, area);
+      el("div", {"class": "p-row"}, el("div", {"class": "p-file"}, title, dirtyMark), el("div", {"class": "p-actions"}, saveBtn, checkBtn)),
+      notice, el("div", {"class": "p-code"}, gutter, area));
 
     const status = el("div", {"class": "p-status muted", role: "status"}, "Run \"Save & check\" to build locally.");
     const details = el("div", {"class": "p-details"});
     const sceneBar = el("div", {"class": "p-scenes", role: "group", "aria-label": "Scene", hidden: ""});
     const view = el("div", {"class": "p-view", hidden: ""});
-    const outCard = el("div", {"class": "card p-outcard"}, el("h2", {}, "Check"), status, sceneBar, view, details);
+    const outCard = el("div", {"class": "card p-outcard"}, el("h2", {}, "Local check"), status, sceneBar, view, details);
 
     panel.append(el("div", {"class": "parts-root"}, listCard, editCard, outCard));
 
@@ -69,8 +70,16 @@
       area.scrollTop = Math.max(0, (n - 1) * lh - area.clientHeight / 2);
     }
 
+    let gutterLines = 0;
+    function syncGutter() {
+      const n = area.value.split("\n").length;
+      if (n !== gutterLines) { gutterLines = n; gutter.textContent = Array.from({length: n}, (_, i) => i + 1).join("\n"); }
+      gutter.scrollTop = area.scrollTop;
+    }
+    area.addEventListener("scroll", () => { gutter.scrollTop = area.scrollTop; });
+
     function setDirty(d) {
-      st.dirty = d;
+      st.dirty = d; syncGutter();
       dirtyMark.hidden = !d;
       if (d && st.path) {
         try { sessionStorage.setItem(DRAFT_KEY, JSON.stringify({path: st.path, mtime: st.mtime, text: area.value})); } catch (_) {}
@@ -84,11 +93,21 @@
     // --- list
     function renderList() {
       const q = filter.value.trim().toLowerCase();
-      const items = st.scripts.filter(p => p.toLowerCase().includes(q));
-      listEl.replaceChildren(...(items.length ? items.map(p => el("li", {},
-        el("button", {type: "button", "class": "p-item" + (p === st.path ? " current" : ""), title: p,
-                      "aria-current": p === st.path ? "true" : "false", onclick: () => open(p)}, p)))
-        : [el("li", {"class": "muted"}, st.scripts.length ? "No match." : "No .fs scripts under the project root.")]));
+      const split = p => { const i = p.lastIndexOf("/"); return [i < 0 ? "" : p.slice(0, i), p.slice(i + 1)]; };
+      const items = st.scripts.filter(p => p.toLowerCase().includes(q)).sort((a, b) => {
+        const [da, fa] = split(a), [db, fb] = split(b);
+        return da < db ? -1 : da > db ? 1 : fa < fb ? -1 : fa > fb ? 1 : 0;
+      });
+      const rows = [];
+      let dir = null;
+      for (const p of items) {  // grouped by folder, file name only
+        const i = p.lastIndexOf("/"), d = i < 0 ? "" : p.slice(0, i);
+        if (d !== dir) { dir = d; rows.push(el("li", {"class": "p-group"}, d || "(project root)")); }
+        rows.push(el("li", {}, el("button", {type: "button", "class": "p-item" + (p === st.path ? " current" : ""), title: p,
+          "aria-current": p === st.path ? "true" : "false", onclick: () => open(p)}, p.slice(i + 1))));
+      }
+      listEl.replaceChildren(...(rows.length ? rows
+        : [el("li", {"class": "muted p-none"}, st.scripts.length ? "No match." : "No .fs scripts under the project root.")]));
     }
     async function loadList() {
       try { st.scripts = (await api("/api/scripts")).scripts; renderList(); }

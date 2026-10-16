@@ -7,5 +7,6 @@ See fsgen/web/server.py for the route contract and fsgen/web/static/app.js for t
 ROUTE_MODULES = [
     "fsgen.web.usage_api",
     "fsgen.web.parts_api",
+    "fsgen.web.uploads_api",
     "fsgen.web.generate_api",
 ]

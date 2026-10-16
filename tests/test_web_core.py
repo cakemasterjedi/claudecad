@@ -190,7 +190,7 @@ def test_sse_keepalive(web):
 
 def test_body_cap(web):
     tok = session(web)
-    big = '{"a":"' + "x" * 1_100_000 + '"}'
+    big = '{"a":"' + "x" * (srv.MAX_BODY + 100_000) + '"}'
     r, _ = call(web, "POST", "/api/_test/post", headers=H, cookie=tok, raw=big)
     assert r.status == 413
     r, _ = call(web, "POST", "/api/_test/post", headers=H, cookie=tok, raw="{bad")

@@ -483,8 +483,9 @@ def main(argv=None):
     g = sub.add_parser("generate", help="prompt -> FeatureScript -> geometry")
     g.add_argument("request")
     g.add_argument("--cloud", action="store_true", help="also push to Onshape, compare and export")
-    g.add_argument("--backend", default="auto", choices=["auto", "anthropic", "claude-cli", "command"],
-                   help="auto: FSGEN_LLM_COMMAND if set, else the Anthropic API if a key is set, else the claude CLI")
+    g.add_argument("--backend", default="auto", choices=["auto", "anthropic", "claude-cli", "command", "ollama"],
+                   help="auto: FSGEN_LLM_COMMAND if set, else the Anthropic API if a key is set, else the claude CLI; "
+                        "ollama: local model via OLLAMA_HOST / FSGEN_OLLAMA_MODEL (never chosen by auto)")
     g.add_argument("--llm-command", help="any LLM CLI that reads stdin and prints the answer, e.g. "
                                          "'ollama run qwen2.5-coder:32b' or 'gemini -p' (also FSGEN_LLM_COMMAND)")
     g.add_argument("--model")
