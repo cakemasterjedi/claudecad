@@ -17,11 +17,31 @@
     <p id="login-error" class="error" role="alert"></p>
   </form>
 </section>
+<section id="pw" class="login pw-overlay" hidden>
+  <form id="pw-form" class="card">
+    <h2>Change password</h2>
+    <label for="pw-current">Current password</label>
+    <input id="pw-current" type="password" autocomplete="current-password" required>
+    <label for="pw-new">New password (8+ characters)</label>
+    <input id="pw-new" type="password" autocomplete="new-password" minlength="8" required>
+    <label for="pw-repeat">Repeat new password</label>
+    <input id="pw-repeat" type="password" autocomplete="new-password" minlength="8" required>
+    <button type="submit">Save password</button>
+    <button id="pw-cancel" class="ghost" type="button">Cancel</button>
+    <p id="pw-msg" class="error" role="alert"></p>
+  </form>
+</section>
 <div id="app" hidden>
   <header class="bar">
     <strong class="brand"><span>fsgen</span></strong>
     <nav id="tabs" aria-label="Sections"></nav>
-    <button id="logout" class="ghost" type="button">Log out</button>
+    <details id="account" class="menu">
+      <summary class="ghost" aria-label="Account menu">&#8942;</summary>
+      <div class="menu-list">
+        <button id="change-pw" class="ghost" type="button">Change password</button>
+        <button id="logout" class="ghost" type="button">Log out</button>
+      </div>
+    </details>
   </header>
   <main id="panels"></main>
 </div>

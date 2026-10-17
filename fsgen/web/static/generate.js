@@ -74,11 +74,17 @@
     const measureRow = el("div", {"class": "measure", hidden: ""}, mSel, mNote, mBtn);
     const sendImgs = el("input", {id: "gen-send-images", type: "checkbox", checked: ""});
     const sendRow = el("label", {"class": "check", "for": "gen-send-images", hidden: ""}, sendImgs, "Send photos to the generator too");
+    const forceBox = el("input", {id: "gen-force-local", type: "checkbox", disabled: ""});
+    const forceSel = el("select", {id: "gen-local-model", "aria-label": "Local model", disabled: ""},
+      el("option", {value: ""}, "Ollama not running"));
+    const localRow = el("div", {"class": "local"},
+      el("label", {"class": "check", "for": "gen-force-local"}, forceBox, "Force local model"), forceSel);
     const photos = el("div", {"class": "photos"}, drop, thumbs, measureRow, mStatus, mErr, sendRow);
     const hint = el("p", {"class": "hint", hidden: ""}, "");
     const formErr = el("p", {"class": "error", role: "alert"});
     const form = el("form", {"class": "card"},
       photos,
+      localRow,
       el("label", {"for": "gen-request"}, "Describe the part"), hint, request,
       el("label", {"for": "gen-name"}, "Name"), name,
       el("label", {"class": "check", "for": "gen-web"}, web, "Search the web"),
@@ -108,9 +114,26 @@
     let running = false, measuring = false, mTimer = null;
     const imgs = [];  // {key, url, id, state: "up"|"ok"|"fail", err}
 
+    let models = [];  // installed Ollama models, from /api/llm
+    const store = {
+      get(k) { try { return localStorage.getItem(k); } catch (_) { return null; } },
+      set(k, v) { try { localStorage.setItem(k, v); } catch (_) { /* storage unavailable */ } },
+    };
+    let ollamaOk = false;
+    const mOllama = mSel.querySelector('option[value="ollama"]');
+    const forced = () => models.length > 0 && forceBox.checked && !!forceSel.value;
+    function syncLocal() {  // one place that decides which controls a forced local model locks
+      const f = forced(), lock = running || measuring;
+      forceBox.disabled = running || measuring || !models.length;
+      forceSel.disabled = running || measuring || !models.length || !forceBox.checked;
+      mOllama.disabled = !ollamaOk && !f;  // a forced model works even when the configured default is not installed
+      if (f) mSel.value = "ollama";
+      mSel.disabled = lock || f;
+      web.disabled = running || f;
+    }
     function setBusy(busy) {
       running = busy; progress.classList.toggle("running", busy);
-      for (const c of [request, name, web, fixes, reviews, go, sendImgs, mSel, mNote]) c.disabled = busy;
+      for (const c of [request, name, go, fixes, reviews, sendImgs, mNote]) c.disabled = busy;
       refreshPhotos();
     }
     function refreshPhotos() {
@@ -120,7 +143,8 @@
       drop.setAttribute("aria-disabled", String(fileInput.disabled));
       const okCount = imgs.filter(i => i.state === "ok").length;
       mBtn.disabled = lock || measuring || okCount < 1 || imgs.some(i => i.state === "up");
-      mSel.disabled = mNote.disabled = lock || measuring;
+      mNote.disabled = lock || measuring;
+      syncLocal();
       for (const b of thumbs.querySelectorAll("button")) b.disabled = lock;
       thumbs.hidden = !imgs.length; measureRow.hidden = sendRow.hidden = !imgs.length;
     }
@@ -173,11 +197,29 @@
     });
 
     // measurement
+    forceBox.addEventListener("change", () => {
+      store.set("fsgen.forceLocal", forceBox.checked ? "1" : "0");
+      // local models need more repair rounds; only move the untouched defaults
+      if (forceBox.checked && fixes.value === "4") fixes.value = "8";
+      else if (!forceBox.checked && fixes.value === "8") fixes.value = "4";
+      refreshPhotos();
+    });
+    forceSel.addEventListener("change", () => { store.set("fsgen.localModel", forceSel.value); });
     api("/api/llm").then(d => {
-      const ok = d && d.ollama && d.ollama.available;
-      const o = mSel.querySelector('option[value="ollama"]');
-      if (!ok) { o.disabled = true; o.textContent = "Local (Ollama, not running)"; }
+      const ol = (d && d.ollama) || {};
+      const ok = !!ol.available;
+      models = Array.isArray(ol.models) ? ol.models.filter(m => typeof m === "string") : [];
+      ollamaOk = ok;
+      if (!ok) mOllama.textContent = models.length ? "Local (Ollama)" : "Local (Ollama, not running)";
       mSel.value = ok && d.measure_default !== "claude" ? "ollama" : "claude";
+      if (models.length) {
+        forceSel.replaceChildren(...models.map(m => el("option", {value: m}, m)));
+        const remembered = store.get("fsgen.localModel");
+        forceSel.value = models.includes(remembered) ? remembered : (models.includes(ol.model) ? ol.model : models[0]);
+        forceBox.checked = store.get("fsgen.forceLocal") === "1";
+        if (forceBox.checked && fixes.value === "4") fixes.value = "8";
+      }
+      refreshPhotos();
     }).catch(() => { mSel.value = "claude"; });
 
     mBtn.addEventListener("click", async () => {
@@ -190,10 +232,11 @@
       refreshPhotos();
       try {
         const body = {images: ids, backend: mSel.value};
+        if (forced()) { body.backend = "ollama"; body.model = forceSel.value; }
         if (mNote.value.trim()) body.note = mNote.value.trim();
         const r = await api("/api/measure", {method: "POST", body});
         insertDraft(String(r.text || "").trim());
-        mText.textContent = `Done in ${Math.round(r.seconds || (Date.now() - t0) / 1000)} s (${r.backend || mSel.value}).`;
+        mText.textContent = `Done in ${Math.round(r.seconds || (Date.now() - t0) / 1000)} s (${r.model || r.backend || mSel.value}).`;
       } catch (e) { mErr.textContent = e.message; mText.textContent = ""; mStatus.hidden = true; }
       finally { clearInterval(mTimer); mTimer = null; measuring = false; mSpin.hidden = true; refreshPhotos(); }
     });
@@ -219,17 +262,100 @@
       if (stream) { stream.close(); stream = null; }
       if (timer) { clearInterval(timer); timer = null; }
     }
+    let viewer = null;
+    function loadViewer() {  // same lazy injection as the Parts tab; resolves to window.fsgen3d or null
+      if (!window.fsgen3d && !document.querySelector('script[src="/static/viewer3d.js"]')) {
+        document.head.append(el("script", {src: "/static/viewer3d.js", defer: ""}));
+      }
+      return new Promise(resolve => {
+        let n = 0;
+        const t = setInterval(() => {
+          if (window.fsgen3d || ++n > 50) { clearInterval(t); resolve(window.fsgen3d || null); }
+        }, 100);
+      });
+    }
+    function previewBlock(script) {
+      const view = el("div", {"class": "p-view gen-view", hidden: ""});
+      const note = el("p", {"class": "muted gen-prevnote", role: "status"}, "Building the 3D preview…");
+      const bar = el("div", {"class": "gen-scenes", role: "group", "aria-label": "Scene", hidden: ""});
+      (async () => {
+        try {
+          const [res, lib] = await Promise.all([
+            api("/api/check", {method: "POST", body: {path: script}}), loadViewer()]);
+          if (!view.isConnected) return;
+          const scenes = (res && res.scenes) || [];
+          if (!scenes.length) { note.textContent = "No 3D preview for this part (it may not build locally)."; return; }
+          if (!lib) { note.textContent = "The 3D viewer script did not load."; return; }
+          note.hidden = false; note.textContent = "";
+          view.hidden = false;
+          viewer = lib.create(view);
+          const pick = async i => {
+            [...bar.children].forEach((x, k) => x.setAttribute("aria-pressed", String(k === i)));
+            await viewer.show(scenes[i].parts);
+          };
+          bar.replaceChildren(...scenes.map((sc, i) => el("button", {type: "button", "class": "ghost gen-scene",
+            "aria-pressed": String(i === 0), onclick: () => pick(i)}, sc.name)));
+          bar.hidden = scenes.length < 2;
+          note.hidden = true;
+          await pick(0);
+        } catch (e) { note.textContent = "No 3D preview: " + e.message; }
+      })();
+      return el("div", {"class": "gen-preview"}, note, bar, view);
+    }
+    function startDownload(jobId, what) {
+      const a = el("a", {href: `/api/generate/${encodeURIComponent(jobId)}/download?what=${what}`, download: ""});
+      document.body.append(a); a.click(); a.remove();
+    }
+    function pushBlock(jobId, jobName) {
+      const out = el("div", {"class": "gen-pushout", role: "status"});
+      const pushBtn = el("button", {type: "button"}, "Push to Onshape");
+      const bothBtn = el("button", {type: "button", "class": "ghost"}, "Download + push");
+      let busy = false;
+      async function push(alsoDownload) {
+        if (busy) return;
+        busy = true; pushBtn.disabled = bothBtn.disabled = true; out.replaceChildren();
+        try {
+          const est = await api(`/api/generate/${encodeURIComponent(jobId)}/estimate`);
+          if (!window.confirm(`Push "${jobName}" to Onshape? About ${est.calls} API calls (${est.left} of the allocation left).`)) return;
+          if (alsoDownload) startDownload(jobId, "zip");
+          out.replaceChildren(el("span", {"class": "spinner"}), " Pushing to Onshape…");
+          const r = await api(`/api/generate/${encodeURIComponent(jobId)}/push`, {method: "POST"});
+          const kids = [];
+          if (r.ok) kids.push(el("span", {"class": "ok"}, "Pushed"), " ",
+            el("a", {href: r.url, target: "_blank", rel: "noopener"}, "Open in Onshape"),
+            el("span", {"class": "muted"}, ` (${r.api_calls} API calls)`));
+          else kids.push(el("span", {"class": "error"}, r.error || "The push failed."));
+          for (const w of r.warnings || []) kids.push(el("p", {"class": "muted"}, "warning: " + w));
+          out.replaceChildren(...kids);
+        } catch (e) { out.replaceChildren(el("span", {"class": "error"}, e.message)); }
+        finally { busy = false; pushBtn.disabled = bothBtn.disabled = false; }
+      }
+      pushBtn.addEventListener("click", () => push(false));
+      bothBtn.addEventListener("click", () => push(true));
+      return [pushBtn, bothBtn, out];
+    }
     function showResult(status, r) {
       r = r || {};
+      if (viewer) { try { viewer.dispose(); } catch (_) { /* already gone */ } viewer = null; }
       const kids = [el("h2", {}, "Result"),
         el("p", {"class": r.ok ? "ok" : "bad"}, r.ok ? (r.verified ? "Done: verified locally" : "Done: not fully verified (see the log)") : "Failed")];
       if (r.error) kids.push(el("p", {"class": "error"}, r.error));
       if (r.assumptions) kids.push(el("b", {}, "Assumptions"), el("div", {"class": "assume"}, r.assumptions));
+      const jobId = job && job.id;
       if (r.script) {
         kids.push(el("p", {}, "Saved as ", el("span", {"class": "path"}, r.script)));
-        if (typeof window.fsgen.openScript === "function") {
-          kids.push(el("button", {type: "button", onclick: () => window.fsgen.openScript(r.script)}, "Open in editor"));
-        }
+        kids.push(previewBlock(r.script));
+      }
+      if (jobId && (r.script || r.out_dir)) {
+        const acts = [];
+        if (r.script) acts.push(el("button", {type: "button", "class": "ghost", onclick: () => startDownload(jobId, "script")}, "Download .fs"));
+        acts.push(el("button", {type: "button", "class": "ghost", onclick: () => startDownload(jobId, "zip")}, "Download all (.zip)"));
+        const pushKids = r.script ? pushBlock(jobId, job.name || "part") : [];
+        kids.push(el("div", {"class": "gen-actions"}, ...acts, ...pushKids.slice(0, 2)));
+        if (pushKids[2]) kids.push(pushKids[2]);
+      }
+      if (r.script && typeof window.fsgen.openScript === "function") {
+        kids.push(el("button", {type: "button", onclick: () => window.fsgen.openScript(r.script)}, "Open in editor"));
       }
       if (r.out_dir) kids.push(el("p", {"class": "muted"}, "Working files: ", el("span", {"class": "path"}, r.out_dir)));
       resultCard.replaceChildren(...kids);
@@ -271,9 +397,10 @@
       if (!text) { formErr.textContent = "Describe the part first."; return; }
       if (imgs.some(i => i.state === "up")) { formErr.textContent = "Wait for the photos to finish uploading."; return; }
       try {
-        const body = {request: text, web_search: web.checked,
+        const body = {request: text, web_search: web.checked && !forced(),
           max_fixes: Number(fixes.value), review_rounds: Number(reviews.value)};
         if (name.value.trim()) body.name = name.value.trim();
+        if (forced()) body.local_model = forceSel.value;
         const ids = imgs.filter(i => i.state === "ok").map(i => i.id);
         if (ids.length && sendImgs.checked) body.images = ids;
         const {id} = await api("/api/generate", {method: "POST", body});

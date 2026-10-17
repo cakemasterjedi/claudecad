@@ -197,35 +197,53 @@ class OllamaLLM:
         imgs = _merge_images(image, images)
         if imgs:
             user["images"] = [base64.b64encode(i.read_bytes()).decode() for i in imgs]
-        body = {"model": self.model, "stream": False, "options": {"temperature": 0.2},
+        # Ollama's default context is 4096 tokens; fsgen's generation prompt is ~9000-12000 (more with photos) and the
+        # answer shares the window. FSGEN_OLLAMA_NUM_CTX overrides (more context = more memory).
+        num_ctx = int(os.environ.get("FSGEN_OLLAMA_NUM_CTX") or 32768)
+        # A part script is a few thousand tokens; a model stuck repeating itself stops here instead of running for
+        # many minutes until the window is full.
+        num_predict = int(os.environ.get("FSGEN_OLLAMA_NUM_PREDICT") or 8192)
+        options: dict = {"num_ctx": num_ctx, "num_predict": num_predict}
+        # Sampling comes from the model's own Modelfile (qwen3.5: temperature 1, presence_penalty 1.5): forcing a low
+        # temperature made qwen loop on the same comment lines until the context filled. FSGEN_OLLAMA_TEMPERATURE
+        # overrides.
+        if os.environ.get("FSGEN_OLLAMA_TEMPERATURE"):
+            options["temperature"] = float(os.environ["FSGEN_OLLAMA_TEMPERATURE"])
+        body = {"model": self.model, "stream": False, "options": options,
                 "messages": [{"role": "system", "content": system}, user]}
         # Thinking models (gemma4, qwen3) think by default: several times slower, and a long think can leave the
         # answer empty. Off unless FSGEN_OLLAMA_THINK=1.
         if os.environ.get("FSGEN_OLLAMA_THINK", "").strip().lower() not in ("1", "true", "yes"):
             body["think"] = False
-        req = urllib.request.Request(f"{self.host}/api/chat", data=json.dumps(body).encode(),
-                                     headers={"Content-Type": "application/json"}, method="POST")
-        try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as r:
-                data = json.loads(r.read())
-        except urllib.error.HTTPError as e:
-            detail = e.read().decode("utf-8", "replace")[:500]
-            if e.code == 404:
-                raise LLMError(f"Ollama model {self.model!r} not found; run `ollama pull {self.model}` ({detail})")
-            raise LLMError(f"Ollama error {e.code}: {detail}")
-        except TimeoutError:
-            raise LLMError(f"Ollama did not answer within {self.timeout}s (FSGEN_LLM_TIMEOUT)")
-        except (urllib.error.URLError, OSError) as e:
-            raise LLMError(f"cannot reach Ollama at {self.host} ({getattr(e, 'reason', e)}); is it running? "
-                           "(OLLAMA_HOST)")
-        except ValueError:
-            raise LLMError("Ollama returned an invalid response")
-        if isinstance(data, dict) and data.get("error"):
-            raise LLMError(f"Ollama: {data['error']}")
-        text = (data.get("message") or {}).get("content") if isinstance(data, dict) else None
-        if not isinstance(text, str) or not text.strip():
-            raise LLMError("Ollama returned an empty answer")
-        return text
+        # Sampling is random, so a model that got stuck repeating itself usually answers on a second try.
+        for _attempt in range(2):
+            req = urllib.request.Request(f"{self.host}/api/chat", data=json.dumps(body).encode(),
+                                         headers={"Content-Type": "application/json"}, method="POST")
+            try:
+                with urllib.request.urlopen(req, timeout=self.timeout) as r:
+                    data = json.loads(r.read())
+            except urllib.error.HTTPError as e:
+                detail = e.read().decode("utf-8", "replace")[:500]
+                if e.code == 404:
+                    raise LLMError(f"Ollama model {self.model!r} not found; run `ollama pull {self.model}` ({detail})")
+                raise LLMError(f"Ollama error {e.code}: {detail}")
+            except TimeoutError:
+                raise LLMError(f"Ollama did not answer within {self.timeout}s (FSGEN_LLM_TIMEOUT)")
+            except (urllib.error.URLError, OSError) as e:
+                raise LLMError(f"cannot reach Ollama at {self.host} ({getattr(e, 'reason', e)}); is it running? "
+                               "(OLLAMA_HOST)")
+            except ValueError:
+                raise LLMError("Ollama returned an invalid response")
+            if isinstance(data, dict) and data.get("error"):
+                raise LLMError(f"Ollama: {data['error']}")
+            text = (data.get("message") or {}).get("content") if isinstance(data, dict) else None
+            if not isinstance(text, str) or not text.strip():
+                raise LLMError("Ollama returned an empty answer")
+            if data.get("done_reason") != "length":
+                return text
+        raise LLMError(f"Ollama's answer was cut off twice (limits: {num_predict} answer tokens, {num_ctx}-token "
+                       "context); the model is probably repeating itself. Try another model, or raise "
+                       "FSGEN_OLLAMA_NUM_PREDICT / FSGEN_OLLAMA_NUM_CTX")
 
 
 def make_llm(backend: str = "auto", model: str | None = None, web: bool = True, command: str | None = None):

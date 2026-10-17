@@ -157,8 +157,19 @@ class Vec:
             raise FSError("vector() needs at least one component")
         d = dims_of(items[0])
         for it in items:
-            if isinstance(it, Vec) or dims_of(it) != d:
-                raise FSError("all vector components must have the same units")
+            if isinstance(it, Vec):
+                raise FSError("vector components must be numbers, not vectors")
+            if dims_of(it) != d:
+                da, db = d[0], dims_of(it)[0]
+                if 2 in (da, db):
+                    hint = "; a length times millimeter is an area, so do not multiply a #variable by millimeter again"
+                elif {da, db} == {0, 1}:
+                    hint = ("; a #variable already has units, so give every component units and do not multiply the "
+                            "vector by millimeter, e.g. vector(#w / 2, 0 * millimeter, 0 * millimeter)")
+                else:
+                    hint = ""
+                raise FSError(f"all vector components must have the same units (got {unit_str(d)} and "
+                              f"{unit_str(dims_of(it))}{hint})")
         return Vec([mag(i) for i in items], d, [i.expr if isinstance(i, Q) else None for i in items])
 
     def item(self, i: int):

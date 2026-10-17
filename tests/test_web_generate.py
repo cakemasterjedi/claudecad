@@ -203,3 +203,127 @@ def test_name_sanitized_and_options_clamped_in_request(web, monkeypatch):
     assert job["name"] == "evil-name" and job["result"]["script"] == "evil-name.fs"
     assert seen["max_fixes"] == 8 and seen["review_rounds"] == 3 and seen["web"] is False
     assert seen["name"] == "evil-name"
+
+
+def test_generate_forced_local_model(web, monkeypatch):
+    import fsgen.web.uploads_api as ua
+    monkeypatch.setattr(ua, "ollama_status", lambda: {"available": True, "model": "m", "models": ["m", "q:7b"]})
+    use_llm(monkeypatch, FakeLLM())
+    seen = []
+    real = gen.generate_native
+    monkeypatch.setattr(gen, "generate_native", lambda *a, **k: (seen.append(k), real(*a, **k))[1])
+    s, d = call(web, "POST", "/api/generate", {"request": "a plate", "local_model": "q:7b"})
+    assert s == 200
+    job = wait_done(web)
+    assert job["model"] == "q:7b" and seen[0]["backend"] == "ollama" and seen[0]["model"] == "q:7b"
+    s, d = call(web, "POST", "/api/generate", {"request": "a plate", "local_model": "nope"})
+    assert s == 400 and "not installed" in d["error"]
+    for bad in (5, ["q:7b"]):
+        assert call(web, "POST", "/api/generate", {"request": "a plate", "local_model": bad})[0] == 400
+    seen.clear()
+    assert call(web, "POST", "/api/generate", {"request": "a plate", "local_model": ""})[0] == 200
+    job = wait_done(web)
+    assert job["model"] is None and "backend" not in seen[0] and "model" not in seen[0]
+
+
+# --- download / estimate / push
+
+def finished_job(web, monkeypatch):
+    monkeypatch.delenv("FSGEN_DOCUMENT", raising=False)
+    use_llm(monkeypatch, FakeLLM())
+    s, d = call(web, "POST", "/api/generate", {"request": "a mounting plate", "name": "Mount", "review_rounds": 0})
+    assert s == 200
+    job = wait_done(web)
+    assert job["status"] == "done"
+    return d["id"], job["result"]
+
+
+def test_download_script_and_zip(web, monkeypatch):
+    import io
+    import zipfile
+    jid, res = finished_job(web, monkeypatch)
+    (web.root / res["out_dir"] / "llm_01_x.md").write_text("big log")
+    c = http.client.HTTPConnection("127.0.0.1", web.port, timeout=30)
+    c.request("GET", f"/api/generate/{jid}/download?what=script", headers={"Cookie": f"fsgen_session={web._tok}"})
+    r = c.getresponse()
+    body = r.read()
+    assert r.status == 200 and r.getheader("Content-Disposition") == 'attachment; filename="Mount.fs"'
+    assert body == (web.root / res["script"]).read_bytes()
+    s, z = call(web, "GET", f"/api/generate/{jid}/download?what=zip")
+    assert s == 200
+    names = zipfile.ZipFile(io.BytesIO(z)).namelist()
+    assert "part_studio.fs" in names and "Mount.fs" in names and not any(n.startswith("llm_") for n in names)
+    assert call(web, "GET", f"/api/generate/{jid}/download?what=bogus")[0] == 400
+    assert call(web, "GET", "/api/generate/nope/download")[0] == 404
+    assert call(web, "GET", f"/api/generate/{jid}/download", cookie=False)[0] == 401
+
+
+def test_download_failed_running_and_no_script(web):
+    import fsgen.web.generate_api as g
+    out = web.root / "out/web/x-bad"
+    out.mkdir(parents=True)
+    (out / "part_studio.fs").write_text("last attempt")
+    (out / "llm_01.md").write_text("log")
+    bad = g.Job("r", "bad")
+    bad.finish("failed", {"ok": False, "out_dir": "out/web/x-bad", "script": None, "error": "x"})
+    run = g.Job("r", "run")
+    g._JOBS.extend([bad, run])
+    assert call(web, "GET", f"/api/generate/{bad.id}/download?what=script")[0] == 404
+    assert call(web, "GET", f"/api/generate/{bad.id}/estimate")[0] == 404
+    s, z = call(web, "GET", f"/api/generate/{bad.id}/download?what=zip")
+    assert s == 200 and z[:2] == b"PK"
+    assert call(web, "GET", f"/api/generate/{run.id}/download?what=zip")[0] == 409
+
+
+def test_estimate_makes_no_onshape_calls(web, monkeypatch):
+    import fsgen.onshape as osh
+    jid, _ = finished_job(web, monkeypatch)
+    monkeypatch.setattr(osh.Onshape, "__init__", lambda *a, **k: (_ for _ in ()).throw(AssertionError("Onshape used")))
+    s, d = call(web, "GET", f"/api/generate/{jid}/estimate")
+    assert s == 200 and d["calls"] > 0 and d["mode"] == "new" and d["budget"] == 60
+    assert "estimated Onshape API calls" in d["text"] and d["left"] > 0
+    assert not Path(".fsgen_api_ledger.jsonl").exists()
+
+
+def test_push_success_over_budget_keys_and_lock(web, monkeypatch):
+    import fsgen.native.pushflow as pf
+    from fsgen.native.build import PushResult
+    jid, _ = finished_job(web, monkeypatch)
+    seen = []
+
+    def fake_push(o, tr, name, text, source, **k):
+        seen.append(name)
+        return PushResult(True, built=3, reused=0, url="https://cad.onshape.com/documents/x"), None
+    monkeypatch.setattr(pf, "push", fake_push)
+    s, d = call(web, "POST", f"/api/generate/{jid}/push")
+    assert s == 200 and d["ok"] and d["url"].endswith("/documents/x") and d["built"] == 3 and seen == ["Mount"]
+    assert call(web, "POST", f"/api/generate/{jid}/push", cookie=False)[0] == 401
+    assert call(web, "POST", f"/api/generate/{jid}/push", headers={})[0] == 403
+    # failure is a message, not a stack trace
+    monkeypatch.setattr(pf, "push", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    s, d = call(web, "POST", f"/api/generate/{jid}/push")
+    assert s == 200 and not d["ok"] and "boom" in d["error"]
+    # concurrent push
+    gate, started = threading.Event(), threading.Event()
+
+    def slow(*a, **k):
+        started.set()
+        assert gate.wait(20)
+        return PushResult(True, url="u"), None
+    monkeypatch.setattr(pf, "push", slow)
+    t = threading.Thread(target=lambda: call(web, "POST", f"/api/generate/{jid}/push"))
+    t.start()
+    assert started.wait(20)
+    assert call(web, "POST", f"/api/generate/{jid}/push")[0] == 409
+    gate.set()
+    t.join()
+    # over budget
+    monkeypatch.setenv("ONSHAPE_RUN_BUDGET", "1")
+    s, d = call(web, "POST", f"/api/generate/{jid}/push")
+    assert s == 409 and "budget" in d["error"]
+    # missing keys
+    monkeypatch.delenv("ONSHAPE_RUN_BUDGET")
+    monkeypatch.delenv("ONSHAPE_ACCESS_KEY")
+    monkeypatch.setattr("fsgen.usage.load_dotenv", lambda *a, **k: None)  # do not re-read the repo .env
+    s, d = call(web, "POST", f"/api/generate/{jid}/push")
+    assert s == 400 and "keys" in d["error"]

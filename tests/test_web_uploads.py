@@ -142,3 +142,32 @@ def test_generate_passes_images(web, monkeypatch):
     assert call(web, "GET", "/api/generate/current")[1]["job"]["images"] == 1
     assert call(web, "POST", "/api/generate", {"request": "a plate", "images": ["f" * 12]})[0] == 400
     assert call(web, "POST", "/api/generate", {"request": "a plate", "images": [iid] * 5})[0] == 400
+
+
+def test_measure_with_local_model(web, monkeypatch):
+    made = []
+
+    class Fake:
+        def __init__(self, model=None):
+            made.append(model)
+
+        def complete(self, system, prompt, image=None, images=()):
+            return "ok"
+    monkeypatch.setattr(ua, "OllamaLLM", Fake)
+    monkeypatch.setattr(ua, "claude_llm", lambda *a, **k: Fake("claude"))
+    monkeypatch.setattr(ua, "ollama_status", lambda: {"available": False, "model": "d", "models": ["a:1", "b:2"]})
+    iid = up(web)[1]["id"]
+    s, d = call(web, "POST", "/api/measure", {"images": [iid], "model": "b:2"})
+    assert s == 200 and d["backend"] == "ollama" and d["model"] == "b:2" and made == ["b:2"]
+    s, d = call(web, "POST", "/api/measure", {"images": [iid], "backend": "ollama", "model": "a:1"})
+    assert s == 200 and d["model"] == "a:1"
+    s, d = call(web, "POST", "/api/measure", {"images": [iid], "backend": "claude"})
+    assert s == 200 and d["model"] is None
+    s, d = call(web, "POST", "/api/measure", {"images": [iid], "model": "nope:9"})
+    assert s == 400 and "not installed" in d["error"]
+    assert call(web, "POST", "/api/measure", {"images": [iid], "backend": "claude", "model": "a:1"})[0] == 400
+    for bad in (5, "", ["a:1"], "x" * 201):
+        assert call(web, "POST", "/api/measure", {"images": [iid], "model": bad})[0] == 400
+    monkeypatch.setattr(ua, "ollama_status", lambda: {"available": False, "model": "d", "models": []})
+    s, d = call(web, "POST", "/api/measure", {"images": [iid], "model": "a:1"})
+    assert s == 400 and "not reachable" in d["error"]

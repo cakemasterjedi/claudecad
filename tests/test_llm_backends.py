@@ -45,7 +45,7 @@ def test_ollama_request(monkeypatch, tmp_path):
     body = got["body"]
     assert got["url"] == "http://box:1234/api/chat"
     assert body["model"] == "gemma4:12b-it-qat" and body["stream"] is False
-    assert body["options"] == {"temperature": 0.2} and body["think"] is False
+    assert body["options"] == {"num_ctx": 32768, "num_predict": 8192} and body["think"] is False
     assert body["messages"][0] == {"role": "system", "content": "sys"}
     assert body["messages"][1]["content"] == "usr" and len(body["messages"][1]["images"]) == 2
 
@@ -68,6 +68,20 @@ def test_ollama_errors(monkeypatch):
     monkeypatch.setattr("urllib.request.urlopen", empty)
     with pytest.raises(llm.LLMError, match="empty answer"):
         llm.OllamaLLM().complete("s", "p")
+
+    answers = []
+
+    def cut_off(req, timeout=None):  # the model repeated itself until the answer limit
+        reason = answers.pop(0)
+        return _Resp(json.dumps({"message": {"content": reason}, "done_reason": reason}).encode())
+    monkeypatch.setattr("urllib.request.urlopen", cut_off)
+    answers[:] = ["length", "stop"]  # retried once
+    assert llm.OllamaLLM().complete("s", "p") == "stop" and not answers
+    monkeypatch.setenv("FSGEN_OLLAMA_NUM_PREDICT", "4096")
+    answers[:] = ["length", "length", "stop"]
+    with pytest.raises(llm.LLMError, match="cut off twice .*4096 answer tokens"):
+        llm.OllamaLLM().complete("s", "p")
+    assert answers == ["stop"]
 
 
 def test_ollama_status(monkeypatch):
