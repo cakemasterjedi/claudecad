@@ -78,7 +78,14 @@ references stay at their Onshape defaults. `fsgen features --refresh` re-downloa
 `--backend ollama` (never chosen by `auto`) runs a local model through the Ollama HTTP API (text and images, no
 extra packages). `OLLAMA_HOST` (default `http://localhost:11434`) and `FSGEN_OLLAMA_MODEL` (default
 `gemma4:12b-it-qat`) configure it; thinking is off (faster, and a long think can leave the answer empty)
-unless `FSGEN_OLLAMA_THINK=1`; `FSGEN_LLM_TIMEOUT` (default 1800 s) applies to all backends.
+unless `FSGEN_OLLAMA_THINK=1`; `FSGEN_OLLAMA_NUM_CTX` (default 32768 tokens, Ollama itself defaults to 4096) sets the context window;
+`FSGEN_OLLAMA_NUM_PREDICT` (default 8192) caps the answer so a looping model stops early (a cut-off answer is retried once); sampling uses the model's
+own Modelfile defaults unless `FSGEN_OLLAMA_TEMPERATURE` is set (a low temperature makes qwen3.5 repeat itself); `FSGEN_LLM_TIMEOUT` (default 1800 s) applies to all backends.
+In `fsgen web`, the Generate tab's *Force local model* option chooses any installed Ollama model and uses it for both
+measurement reading and generation (`model` on `/api/measure`, `local_model` on `/api/generate`).
+A finished generation can be previewed in 3D, downloaded (`GET /api/generate/{id}/download?what=script|zip`) and pushed
+to Onshape (`GET .../estimate` is free; `POST .../push` is refused over `ONSHAPE_RUN_BUDGET`, default 60, or the
+allocation left, and the UI confirms the estimate first).
 
 In a chat, any coding assistant can be the designer instead: see `AGENTS.md`.
 

@@ -1,21 +1,30 @@
 """Generate tab API: prompt -> part via `generate_native` in paste mode (0 Onshape calls), run in a background thread.
 
-POST /api/generate               {request, name?, web_search?, max_fixes?, review_rounds?, images?: [upload ids]} -> {"id"} (409 if busy)
+POST /api/generate               {request, name?, web_search?, max_fixes?, review_rounds?, images?: [upload ids],
+                                  local_model?: installed Ollama model; forces backend "ollama" with it, no Claude calls} -> {"id"} (409 if busy)
 GET  /api/generate/current       -> latest job summary or {"job": null}
 GET  /api/generate/{id}/events   -> SSE: `log` {i, text} (from ?from=N), then `done` {status, result}
+GET  /api/generate/{id}/download?what=script|zip
+                                 -> the saved .fs, or a zip of the working files without the LLM logs (also for failed jobs)
+GET  /api/generate/{id}/estimate -> {calls, text, mode, used, left, budget}: push estimate, 0 Onshape calls
+POST /api/generate/{id}/push     -> push the saved script to Onshape (one at a time; refused over the run budget or the
+                                 allocation left) -> {ok, url, built, reused, warnings, error, api_calls}
 """
 from __future__ import annotations
 
+import io
+import os
 import re
 import shutil
 import threading
 import time
 import uuid
+import zipfile
 from pathlib import Path
 
 from .paths import resolve_in_root
-from .server import HTTPError, route
-from .uploads_api import upload_paths
+from .server import Download, HTTPError, route
+from .uploads_api import local_model, upload_paths
 
 MAX_LOG_LINES = 5000
 MAX_JOBS = 10
@@ -37,9 +46,9 @@ def _clamp(v, lo, hi, default) -> int:
 
 
 class Job:
-    def __init__(self, request: str, name: str, images: int = 0):
+    def __init__(self, request: str, name: str, images: int = 0, model: str | None = None):
         self.id = uuid.uuid4().hex[:12]
-        self.request, self.name, self.images = request, name, images
+        self.request, self.name, self.images, self.model = request, name, images, model
         self.status = "running"
         self.started, self.finished = time.time(), None
         self.lines: list[str] = []
@@ -64,7 +73,7 @@ class Job:
 
     def summary(self) -> dict:
         with self.cond:
-            return {"id": self.id, "request": self.request, "name": self.name, "images": self.images, "status": self.status,
+            return {"id": self.id, "request": self.request, "name": self.name, "images": self.images, "model": self.model, "status": self.status,
                     "started": self.started, "finished": self.finished, "result": self.result,
                     "log_lines": self.dropped + len(self.lines)}
 
@@ -88,7 +97,8 @@ def _run(job: Job, root: Path, out_dir: Path, opts: dict, images: list[Path] = (
     try:
         res = gen.generate_native(job.request, out_dir, name=job.name, paste=True, budget=0, export_formats=(),
                                   web=opts["web_search"], max_fixes=opts["max_fixes"],
-                                  review_rounds=opts["review_rounds"], on_log=job.log, images=images)
+                                  review_rounds=opts["review_rounds"], on_log=job.log, images=images,
+                                  **({"backend": "ollama", "model": job.model} if job.model else {}))
         calls = res.get("api_calls") or 0
         if calls:
             job.log(f"WARNING: {calls} Onshape API call(s) were made; a local generation should make 0. Check usage.")
@@ -129,13 +139,17 @@ def start(req):
     ws = b.get("web_search", True)
     opts = {"web_search": ws if isinstance(ws, bool) else True,
             "max_fixes": _clamp(b.get("max_fixes"), 0, 8, 4), "review_rounds": _clamp(b.get("review_rounds"), 0, 3, 2)}
+    forced = b.get("local_model")
+    model = local_model(forced) if forced not in (None, "") else None
+    if model:
+        opts["web_search"] = False
     root = req.app.root
     ids = b.get("images")
     images = upload_paths(root, ids) if ids else []
     with _LOCK:
         if any(j.status == "running" for j in _JOBS):
             raise HTTPError(409, "a generation is already running")
-        job = Job(text, name, len(images))
+        job = Job(text, name, len(images), model)
         out_dir = resolve_in_root(root, f"out/web/{time.strftime('%Y%m%d-%H%M%S')}-{name}", suffixes=None)
         _JOBS.append(job)
         del _JOBS[:-MAX_JOBS]
@@ -180,3 +194,112 @@ def events(req):
                     return
                 yield "ping", {}  # lets the server notice a closed connection and stop this generator
     return gen()
+
+
+# --- download / estimate / push of a finished job
+
+_PUSH_LOCK = threading.Lock()
+
+
+def _job(req) -> Job:
+    with _LOCK:
+        job = next((j for j in _JOBS if j.id == req.params["id"]), None)
+    if job is None:
+        raise HTTPError(404, "unknown job")
+    return job
+
+
+def _script_path(req, job: Job) -> Path:
+    rel = (job.result or {}).get("script")
+    if not rel:
+        raise HTTPError(404, "this job has no saved script")
+    p = resolve_in_root(req.app.root, rel)
+    if not p.is_file():
+        raise HTTPError(404, "the saved script is gone")
+    return p
+
+
+def _run_budget() -> int:
+    try:
+        return int(os.environ.get("ONSHAPE_RUN_BUDGET") or 60)
+    except ValueError:
+        return 60
+
+
+def _estimate(req, job: Job):
+    """-> (trace, script text, Estimate, mode, Allocation); 0 Onshape calls."""
+    from ..native import pushflow
+    from ..native.script import trace
+    from ..usage import allocation_status
+    text = _script_path(req, job).read_text()
+    tr = trace(text)
+    if not tr.ok:
+        raise HTTPError(409, f"script error: {tr.error}")
+    est, st0 = pushflow.estimate(tr, job.name)
+    return tr, text, est, "new" if st0 is None else "update", allocation_status()
+
+
+@route("GET", "/api/generate/{id}/download")
+def download(req):
+    job = _job(req)
+    with job.cond:
+        status, result = job.status, job.result
+    if status == "running":
+        raise HTTPError(409, "the generation is still running")
+    what = req.query.get("what", "script")
+    if what == "script":
+        p = _script_path(req, job)
+        return Download(p.read_bytes(), f"{job.name}.fs", "text/plain; charset=utf-8")
+    if what != "zip":
+        raise HTTPError(400, "what must be script or zip")
+    rel = (result or {}).get("out_dir")
+    if not rel:
+        raise HTTPError(404, "no working files for this job")
+    out = resolve_in_root(req.app.root, rel, suffixes=None)
+    if not out.is_dir():
+        raise HTTPError(404, "the working files are gone")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for f in sorted(out.rglob("*")):
+            if f.is_file() and not (f.parent == out and f.name.startswith("llm_") and f.suffix == ".md"):
+                z.write(f, f.relative_to(out).as_posix())
+        if (result or {}).get("script"):
+            z.write(_script_path(req, job), f"{job.name}.fs")
+    return Download(buf.getvalue(), f"{job.name}.zip", "application/zip")
+
+
+@route("GET", "/api/generate/{id}/estimate")
+def estimate(req):
+    job = _job(req)
+    _tr, _text, est, mode, alloc = _estimate(req, job)
+    return {"calls": est.total, "text": est.text(alloc), "mode": mode, "used": alloc.used, "left": alloc.left,
+            "budget": _run_budget()}
+
+
+@route("POST", "/api/generate/{id}/push")
+def push(req):
+    from ..native import pushflow
+    from ..onshape import Onshape, OnshapeError
+    job = _job(req)
+    tr, text, est, _mode, alloc = _estimate(req, job)
+    if not (os.environ.get("ONSHAPE_ACCESS_KEY") and os.environ.get("ONSHAPE_SECRET_KEY")):
+        raise HTTPError(400, "Onshape keys are needed to push; set them in .env")
+    budget = _run_budget()
+    if est.total > budget:
+        raise HTTPError(409, f"estimate {est.total} exceeds the run budget {budget} (ONSHAPE_RUN_BUDGET)")
+    if est.total > alloc.left:
+        raise HTTPError(409, f"estimate {est.total} exceeds the {alloc.left} API calls left")
+    if not _PUSH_LOCK.acquire(blocking=False):
+        raise HTTPError(409, "another push is already running")
+    o = None
+    try:
+        o = Onshape(budget=budget, purpose=f"web push {job.name}")
+        r, _st = pushflow.push(o, tr, job.name, text, _script_path(req, job).as_posix())
+        return {"ok": bool(r.ok), "url": r.url, "built": r.built, "reused": r.reused, "warnings": list(r.warnings),
+                "error": r.error, "api_calls": o.calls}
+    except Exception as e:  # noqa: BLE001  (Onshape errors, budget stops, ...: a message, never a stack trace)
+        msg = str(e) if isinstance(e, OnshapeError) else f"{type(e).__name__}: {e}"
+        return {"ok": False, "error": msg, "url": None, "built": 0, "reused": 0, "warnings": [],
+                "api_calls": o.calls if o else 0}
+    finally:
+        _PUSH_LOCK.release()

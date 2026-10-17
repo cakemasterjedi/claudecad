@@ -80,3 +80,18 @@ main:has(.panel:not([hidden]) .gen) { max-width: 76rem; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .hint { font-size: .85rem; color: var(--success); margin: 0 0 var(--s2); }
 .hint.warn { color: var(--muted); }
+.local { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; margin-top: var(--s3); }
+.local .check { margin: 0; flex: 0 0 auto; }
+.local select { width: auto; flex: 1 1 11rem; }
+
+/* result: 3D preview, downloads, push */
+.gen .gen-preview { margin: var(--s3) 0; }
+.gen .gen-view { position: relative; height: 18rem; border-radius: var(--radius-sm); overflow: hidden; }
+.gen .gen-scene[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-text); }
+@media (max-width: 40rem) { .gen .gen-view { height: 14rem; } }
+.gen .gen-scenes { display: flex; flex-wrap: wrap; gap: var(--s2); margin-bottom: var(--s2); }
+.gen .gen-actions { display: flex; flex-wrap: wrap; gap: var(--s2); margin: var(--s3) 0; }
+.gen .gen-actions button { flex: 1 1 10rem; }
+.gen .gen-pushout { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2); margin: 0 0 var(--s3); overflow-wrap: anywhere; }
+.gen .gen-pushout:empty { display: none; }
+.gen .gen-pushout p { margin: 0; flex-basis: 100%; }

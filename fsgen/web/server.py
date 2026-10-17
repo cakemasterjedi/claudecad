@@ -95,6 +95,13 @@ def _compile(pattern: str) -> re.Pattern:
     return re.compile("^" + re.sub(r"\{(\w+)(?::(path))?\}", sub, pattern) + "$")
 
 
+class Download:
+    """Handler return value: a file sent as an attachment (filename is reduced to [A-Za-z0-9._-])."""
+
+    def __init__(self, body: bytes, filename: str, ctype: str = "application/octet-stream"):
+        self.body, self.filename, self.ctype = body, filename, ctype
+
+
 def route(method: str, pattern: str):
     """Decorator: register `fn(req) -> dict | (status, dict) | iterator of (event, data)` for METHOD pattern."""
     def deco(fn):
@@ -152,6 +159,10 @@ class SessionStore:
                 return False
             self._tokens[token] = now  # idle timeout: each use refreshes
             return True
+
+    def keep_only(self, token: str) -> None:
+        with self._lock:
+            self._tokens = {t: seen for t, seen in self._tokens.items() if t == token}
 
     def drop(self, token: str | None) -> None:
         with self._lock:
@@ -307,7 +318,10 @@ class Handler(BaseHTTPRequestHandler):
         fn, params = find_route(self.command, path)
         req = Request(self.command, path, params, query, self._read_body(), app, ip, self.headers)
         result = fn(req)
-        if isinstance(result, dict):
+        if isinstance(result, Download):
+            name = re.sub(r"[^A-Za-z0-9._-]+", "_", result.filename).strip(".") or "download"
+            self._send(200, result.body, result.ctype, [("Content-Disposition", f'attachment; filename="{name}"')])
+        elif isinstance(result, dict):
             self._json(200, result)
         elif isinstance(result, tuple) and len(result) == 2 and isinstance(result[0], int):
             self._json(result[0], result[1])

@@ -177,12 +177,10 @@ def cmd_studio(args):
     for f in tr.features:
         print(f"  {f.feature_type:16s} {f.name}")
     from .native import build as nb
-    from .usage import estimate_push
-    from .cloud import known_target
+    from .native import pushflow
     sname = args.name or path.stem
-    tgt = known_target(args.document)
-    st0 = None if args.fresh or tgt is None else nb.find_state(sname, tgt["did"], tgt["wid"])
-    est = estimate_push(tr, st0, metrics=args.metrics, exports=tuple(f for f in (args.export or "").split(",") if f))
+    est, st0 = pushflow.estimate(tr, sname, args.document, fresh=args.fresh, metrics=args.metrics,
+                                 exports=tuple(f for f in (args.export or "").split(",") if f))
     print(f"push to \"{sname}\" ({'new' if st0 is None else 'update'}): " + est.text())
     if args.action == "paste":
         return paste_command(path, tr, args)
@@ -242,19 +240,9 @@ def cmd_studio(args):
         print(f"refusing to push: estimate {est.total} exceeds --budget {args.budget}")
         return 1
     o = Onshape(purpose=f"studio push {path.name}")
-    from .cloud import target_workspace
-    ws = target_workspace(o, args.document, public=args.public or None)
-    st = nb.get_studio(o, args.name or path.stem, ws["did"], ws["wid"], fresh=args.fresh)
-    r = nb.push_trace(o, st, tr)
-    from .native import catalog
-    if r.ok:
-        learned = catalog.record_success(tr.features, path.read_text(), str(path))
-        if learned:
-            print("catalog: learned", ", ".join(learned))
-    elif r.failed:
-        f = next((f for f in tr.features if f.name == r.failed), None)
-        if f is not None:
-            catalog.record_failure(f.feature_type, r.error or "", str(path))
+    r, st = pushflow.push(o, tr, args.name or path.stem, path.read_text(), str(path), args.document,
+                          public=args.public or None, fresh=args.fresh,
+                          on_learned=lambda learned: print("catalog: learned", ", ".join(learned)))
     print(f"built {r.built}, reused {r.reused}: {r.url}")
     for w in r.warnings:
         print("warning:", w)
@@ -346,6 +334,26 @@ def lan_addresses() -> list[str]:
     return sorted({a for a in found if not a.startswith("127.") and a != "0.0.0.0"})
 
 
+def set_web_password(env_path: Path, password: str | None = None) -> int:
+    """Store FSGEN_WEB_PASSWORD in .env (prompting without echo when none is given)."""
+    import getpass
+
+    if password is None:
+        password = getpass.getpass("New web password: ")
+        if password != getpass.getpass("Repeat: "):
+            print("passwords differ; nothing changed")
+            return 1
+    from .web.password_api import save_password
+
+    try:
+        save_password(env_path, password)
+    except ValueError as e:
+        print(f"{e}; nothing changed")
+        return 1
+    print(f"password saved to {env_path}; restart `fsgen web` to use it")
+    return 0
+
+
 def cmd_web(args):
     """Serve the LAN web UI."""
     import os
@@ -354,6 +362,10 @@ def cmd_web(args):
     from .web.server import make_server
 
     sys.stdout.reconfigure(line_buffering=True)  # show the URLs and password at once when piped to a file
+    if args.set_password is not None:
+        return set_web_password(Path(args.root) / ".env", args.set_password or None)
+    from dotenv import load_dotenv
+    load_dotenv(Path(args.root) / ".env")
     password = args.password or os.environ.get("FSGEN_WEB_PASSWORD")
     generated = not password
     if generated:
@@ -566,6 +578,8 @@ def main(argv=None):
     w.add_argument("--host", default="0.0.0.0")
     w.add_argument("--port", type=int, default=8770)
     w.add_argument("--password", help="default: $FSGEN_WEB_PASSWORD, else a random one printed at start")
+    w.add_argument("--set-password", nargs="?", const="", metavar="PASSWORD",
+                   help="save the web password to .env and exit (prompts when PASSWORD is omitted)")
     w.add_argument("--root", default=".", help="project folder to serve (default: current directory)")
     w.set_defaults(fn=cmd_web)
 

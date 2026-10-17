@@ -136,7 +136,7 @@ To paste: create a Feature Studio in Onshape, paste the file, and insert the fea
 .venv/bin/fsgen web --port 8771 --password secret --root path/to/project
 ```
 
-The password is `--password`, else `$FSGEN_WEB_PASSWORD`, else a random one printed once at start. Open the LAN
+Set a saved password with `fsgen web --set-password` (prompts, stores it in `.env`). The password is `--password`, else `$FSGEN_WEB_PASSWORD` (also read from `.env`), else a random one printed once at start. Open the LAN
 URL on your phone. **It is plain HTTP**: anyone on the network can see the traffic, so use it only on a trusted
 network. Failed logins are rate limited. It serves the `.fs` files under `--root` (default: the current folder).
 
@@ -150,9 +150,13 @@ network. Failed logins are rate limited. It serves the `.fs` files under `--root
 - **Photos** (Generate tab): upload up to 4 photos or dimensioned sketches of the part (jpeg/png/webp, 3 MB each).
   *Read measurements* extracts the dimensions into the request box, locally with Ollama when the configured model is
   installed (`OLLAMA_HOST`, `FSGEN_OLLAMA_MODEL`), else with Claude; the photos are also sent to the generate
-  stage. API: `POST /api/uploads {filename, data(base64)}` -> `{id, type}`; `GET /api/llm`;
-  `POST /api/measure {images, note?, backend?}` -> `{text, backend, seconds}`; `POST /api/generate` accepts
-  `images: [ids]`.
+  stage. The *Force local model* option on the Generate tab picks an installed Ollama model and uses it for both
+  *Read measurements* and Generate (no Claude calls, no web search). API: `POST /api/uploads {filename,
+  data(base64)}` -> `{id, type}`; `GET /api/llm`; `POST /api/measure {images, note?, backend?, model?}` ->
+  `{text, backend, model, seconds}`; `POST /api/generate` accepts `images: [ids]` and `local_model`.
+  After a generation the result card shows a 3D preview and the buttons Download .fs, Download all (.zip), Push to
+  Onshape and Download + push (`GET /api/generate/{id}/download|estimate`, `POST /api/generate/{id}/push`; the push
+  asks for confirmation with the estimate first).
 - **Usage**: the same numbers as `fsgen usage` (read-only).
 
 ## Which AI?

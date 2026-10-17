@@ -2,8 +2,9 @@
 
 POST /api/uploads   {filename, data: base64 (data: URL prefix allowed)} -> {"id", "type"}  (400/413/415)
 GET  /api/llm       -> {"ollama": {available, model, models}, "measure_default": "ollama"|"claude"}
-POST /api/measure   {images: [ids], note?, backend?: "ollama"|"claude"} -> {"text", "backend", "seconds"}
-                    (400 bad input, 409 busy, 502 LLM failure)
+POST /api/measure   {images: [ids], note?, backend?: "ollama"|"claude", model?: installed Ollama model name}
+                    -> {"text", "backend", "model" (Ollama model used, null for claude), "seconds"}
+                    (a model implies backend "ollama"; with "claude" it is a 400; 400 bad input, 409 busy, 502 LLM failure)
 Uploads live in <root>/out/web/uploads/<id>.<ext>; only the newest MAX_UPLOADS are kept.
 """
 from __future__ import annotations
@@ -58,6 +59,18 @@ def upload_paths(root: Path, ids) -> list[Path]:
             raise HTTPError(400, f"unknown image id: {i}")
         out.append(found)
     return out
+
+
+def local_model(name) -> str:
+    """Validate a user-chosen Ollama model name against the installed models (400 otherwise)."""
+    if not isinstance(name, str) or not name.strip() or len(name) > 200:
+        raise HTTPError(400, "model must be the name of an installed Ollama model")
+    models = ollama_status().get("models") or []
+    if not models:
+        raise HTTPError(400, "Ollama is not reachable (no installed models found)")
+    if name not in models:
+        raise HTTPError(400, f"Ollama model {name[:60]!r} is not installed")
+    return name
 
 
 def _prune(d: Path) -> None:
@@ -115,7 +128,14 @@ def measure(req):
     if not isinstance(note, str) or len(note) > MAX_NOTE:
         raise HTTPError(400, f"note must be text of at most {MAX_NOTE} characters")
     backend = b.get("backend")
-    if backend is None:
+    model = b.get("model")
+    if model is not None:
+        if backend is None:
+            backend = "ollama"
+        if backend != "ollama":
+            raise HTTPError(400, "model can only be used with the 'ollama' backend")
+        model = local_model(model)
+    elif backend is None:
         backend = "ollama" if ollama_status()["available"] else "claude"
     if backend not in ("ollama", "claude"):
         raise HTTPError(400, "backend must be 'ollama' or 'claude'")
@@ -124,11 +144,13 @@ def measure(req):
     try:
         t0 = time.time()
         try:
-            llm = OllamaLLM() if backend == "ollama" else claude_llm(web=False)
+            llm = (OllamaLLM(model) if model else OllamaLLM()) if backend == "ollama" else claude_llm(web=False)
             system, prompt = prompts.measure_prompt(note)
             text = llm.complete(system, prompt, images=paths)
         except LLMError as e:
             raise HTTPError(502, str(e))
-        return {"text": text.strip(), "backend": backend, "seconds": round(time.time() - t0, 1)}
+        return {"text": text.strip(), "backend": backend,
+                "model": (model or getattr(llm, "model", None)) if backend == "ollama" else None,
+                "seconds": round(time.time() - t0, 1)}
     finally:
         _MEASURE_LOCK.release()

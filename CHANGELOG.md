@@ -7,6 +7,14 @@
 - **`fsgen web`**: LAN web UI (stdlib server, password login, CSRF header, security headers; plain HTTP, for trusted
   networks only). Tabs: **Parts** (edit, save, check in a worker process, 3D preview), **Generate** (prompt to
   part with a live log, paste mode, 0 Onshape calls, one job at a time), **Usage** (read-only API usage).
+- **`fsgen web` Generate result actions**: inline 3D preview of the generated part (0 Onshape calls), download of
+  the `.fs` or all working files (`.zip`, without LLM logs), and *Push to Onshape* / *Download + push* with an
+  estimate and confirmation first (refused over `ONSHAPE_RUN_BUDGET` or the allocation left). The push logic is
+  shared with `fsgen studio push` (`fsgen/native/pushflow.py`).
+- **`fsgen web` Force local model**: pick an installed Ollama model on the Generate tab and use it for both *Read
+  measurements* and Generate, with no Claude calls.
+- **`fsgen web` password change**: a *Password* button in the web UI (needs the current password, saved to `.env`,
+  other sessions are logged out) and `fsgen web --set-password`; `.env` is now read at start.
 - `generate_native(..., on_log=)`: per-run progress sink (several runs in threads keep separate logs).
 - **Geometry check** in `studio check` / `build`: per part, valid B-rep, closed shell, positive volume, one solid,
   watertight STL mesh.

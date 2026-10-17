@@ -9,4 +9,5 @@ ROUTE_MODULES = [
     "fsgen.web.parts_api",
     "fsgen.web.uploads_api",
     "fsgen.web.generate_api",
+    "fsgen.web.password_api",
 ]

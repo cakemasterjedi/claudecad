@@ -138,9 +138,31 @@
         showApp();
       } catch (e) { err.textContent = e.message; }
     });
+    document.addEventListener("click", ev => {
+      const m = document.getElementById("account");
+      if (m.open && !m.contains(ev.target)) m.open = false;
+    });
     document.getElementById("logout").addEventListener("click", async () => {
+      document.getElementById("account").open = false;
       try { await api("/api/logout", {method: "POST"}); } catch (_) {}
       showLogin();
+    });
+    const pw = document.getElementById("pw"), pwMsg = document.getElementById("pw-msg");
+    const pwClose = () => { pw.hidden = true; pw.querySelector("form").reset(); pwMsg.textContent = ""; };
+    document.getElementById("change-pw").addEventListener("click", () => {
+      document.getElementById("account").open = false;
+      pw.hidden = false; document.getElementById("pw-current").focus();
+    });
+    document.getElementById("pw-cancel").addEventListener("click", pwClose);
+    document.getElementById("pw-form").addEventListener("submit", async ev => {
+      ev.preventDefault();
+      pwMsg.textContent = "";
+      const cur = document.getElementById("pw-current").value, nw = document.getElementById("pw-new").value;
+      if (nw !== document.getElementById("pw-repeat").value) { pwMsg.textContent = "New passwords differ."; return; }
+      try {
+        await api("/api/password", {method: "POST", body: {current: cur, new: nw}});
+        pwClose();
+      } catch (e) { pwMsg.textContent = e.message; }
     });
     api("/api/usage").then(showApp).catch(() => showLogin());
   });
