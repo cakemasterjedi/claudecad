@@ -53,7 +53,7 @@ write the Part Studio script, fsgen checks it, builds it locally and delivers it
 
 ### Implicit Rules
 - Hardware: AMD RX 6700 XT 12GB VRAM (ROCm, no nvidia-smi; use rocm-smi), 35GB RAM
-- Ollama models installed: qwen3.5:9b, gemma4:12b-it-qat, gemma4:26b
+- Ollama models installed: qwen3.5:9b, gemma4:12b-it-qat
 - Ollama loop diagnosis: journalctl -u ollama grep 'truncated' (truncated=1 → window filled)
 - fsgen generate CLI without --cloud = 0 Onshape calls; use for live local-model tests
 - Web UI model choice: Force local model checkbox + dropdown (list from Ollama at page load)
