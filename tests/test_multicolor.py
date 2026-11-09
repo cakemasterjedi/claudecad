@@ -2,10 +2,10 @@
 import re
 from pathlib import Path
 
-from fsgen.native import geomcheck
-from fsgen.native.local import build_local
-from fsgen.native.paste import paste_export
-from fsgen.native.script import trace
+from scriptforge.native import geomcheck
+from scriptforge.native.local import build_local
+from scriptforge.native.paste import paste_export
+from scriptforge.native.script import trace
 
 ROOT = Path(__file__).resolve().parent.parent
 HEAD = 'FeatureScript 3083;\nimport(path : "onshape/std/common.fs", version : "3083.0");\n'

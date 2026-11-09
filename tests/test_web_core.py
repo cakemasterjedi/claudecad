@@ -1,15 +1,15 @@
-"""fsgen web: server core (auth, CSRF, headers, paths, SSE, usage). Localhost only, no network."""
+"""scriptforge web: server core (auth, CSRF, headers, paths, SSE, usage). Localhost only, no network."""
 import http.client
 import json
 import threading
 
 import pytest
 
-from fsgen.web import server as srv
-from fsgen.web.paths import list_scripts, resolve_in_root
-from fsgen.web.server import HTTPError, LoginLimiter, SessionStore, route
+from scriptforge.web import server as srv
+from scriptforge.web.paths import list_scripts, resolve_in_root
+from scriptforge.web.server import HTTPError, LoginLimiter, SessionStore, route
 
-H = {"X-Fsgen": "1"}
+H = {"X-ScriptForge": "1"}
 
 
 @route("GET", "/api/_test/echo/{name}")
@@ -56,7 +56,7 @@ def call(web, method, path, body=None, headers=None, cookie=None, raw=None):
     c = http.client.HTTPConnection("127.0.0.1", web[0], timeout=10)
     h = dict(headers or {})
     if cookie:
-        h["Cookie"] = f"fsgen_session={cookie}"
+        h["Cookie"] = f"scriptforge_session={cookie}"
     data = raw if raw is not None else (json.dumps(body) if body is not None else None)
     c.request(method, path, body=data, headers=h)
     r = c.getresponse()
@@ -79,7 +79,7 @@ def test_login_success_and_cookie_flags(web):
     r, p = login(web)
     assert r.status == 200 and json.loads(p) == {"ok": True}
     cookie = r.getheader("Set-Cookie")
-    assert cookie.startswith("fsgen_session=")
+    assert cookie.startswith("scriptforge_session=")
     assert "HttpOnly" in cookie and "SameSite=Strict" in cookie and "Path=/" in cookie
     assert len(cookie.split(";")[0].split("=", 1)[1]) >= 43  # 32 random bytes, base64url
 
@@ -213,7 +213,7 @@ def test_security_headers(web):
 
 def test_static(web):
     r, p = call(web, "GET", "/")
-    assert r.status == 200 and b"fsgen" in p and r.getheader("Content-Type").startswith("text/html")
+    assert r.status == 200 and b"ScriptForge" in p and r.getheader("Content-Type").startswith("text/html")
     assert call(web, "GET", "/static/app.js")[0].status == 200
     r, p = call(web, "GET", "/static/parts.js")  # optional tab module: empty when missing
     assert r.status == 200
@@ -270,15 +270,15 @@ def test_usage_endpoint(web, tmp_path, monkeypatch):
     for k, v in (("ONSHAPE_API_ALLOCATION", "100"), ("ONSHAPE_API_BASELINE", "10"), ("ONSHAPE_API_BASELINE_DATE", "")):
         monkeypatch.setenv(k, v)
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("fsgen.onshape.LEDGER", __import__("pathlib").Path(".fsgen_api_ledger.jsonl"))
-    monkeypatch.setattr("fsgen.usage.LEDGER", __import__("pathlib").Path(".fsgen_api_ledger.jsonl"))
+    monkeypatch.setattr("scriptforge.onshape.LEDGER", __import__("pathlib").Path(".scriptforge_api_ledger.jsonl"))
+    monkeypatch.setattr("scriptforge.usage.LEDGER", __import__("pathlib").Path(".scriptforge_api_ledger.jsonl"))
     rows = [
         {"t": "2026-01-01T00:00:00", "run": "r", "purpose": "generate:x", "call": "GET /documents", "status": 200, "counted": True},
         {"t": "2026-01-01T00:00:01", "run": "r", "purpose": "generate:y", "call": "GET /documents", "status": 200, "counted": True},
         {"t": "2026-01-01T00:00:02", "run": "r", "purpose": "studio push", "call": "POST /features", "status": 200, "counted": True},
         {"t": "2026-01-01T00:00:03", "run": "r", "purpose": "studio push", "call": "POST /features", "status": 500, "counted": False},
     ]
-    (tmp_path / ".fsgen_api_ledger.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+    (tmp_path / ".scriptforge_api_ledger.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
     tok = session(web)
     r, p = call(web, "GET", "/api/usage", cookie=tok)
     d = json.loads(p)
@@ -290,7 +290,7 @@ def test_usage_endpoint(web, tmp_path, monkeypatch):
 
 
 def test_cli_web_parser(monkeypatch):
-    from fsgen import cli
+    from scriptforge import cli
     seen = {}
     monkeypatch.setattr(cli, "cmd_web", lambda a: seen.setdefault("a", a) and 0)
     with pytest.raises(SystemExit):
@@ -300,5 +300,5 @@ def test_cli_web_parser(monkeypatch):
 
 
 def test_route_modules_registered():
-    from fsgen.web import ROUTE_MODULES
-    assert "fsgen.web.usage_api" in ROUTE_MODULES
+    from scriptforge.web import ROUTE_MODULES
+    assert "scriptforge.web.usage_api" in ROUTE_MODULES

@@ -1,22 +1,23 @@
 [project]
-name = "fsgen"
+name = "scriptforge-cad"
 version = "0.2.0"
 description = "Prompt -> Onshape FeatureScript -> local OpenCascade preview and Onshape export"
 requires-python = ">=3.11,<3.15"
 dependencies = ["build123d>=0.9", "requests", "python-dotenv", "anthropic", "matplotlib", "numpy", "shapely>=2.0", "svgelements>=1.9"]
 
 [project.scripts]
-fsgen = "fsgen.cli:main"
+scriptforge = "scriptforge.cli:main"
+fsgen = "scriptforge.cli:main"  # backward-compatible alias
 
 [build-system]
 requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["fsgen*"]
+include = ["scriptforge*"]
 
 [tool.setuptools.package-data]
-"fsgen.web" = ["static/*"]
+"scriptforge.web" = ["static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

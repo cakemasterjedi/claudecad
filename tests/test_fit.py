@@ -9,10 +9,10 @@ from pathlib import Path
 
 import pytest
 
-from fsgen.native.fit import FitError, run_fit
-from fsgen.native.local import build_local
-from fsgen.native.printcheck import overhangs
-from fsgen.native.script import trace
+from scriptforge.native.fit import FitError, run_fit
+from scriptforge.native.local import build_local
+from scriptforge.native.printcheck import overhangs
+from scriptforge.native.script import trace
 
 ROOT = Path(__file__).resolve().parent.parent
 BOX = ROOT / "examples/native/fit/lidded_box.fs"
@@ -56,7 +56,7 @@ def test_wrong_expectation_fails(box_solids):
 
 
 def test_snap_and_collision_verdicts():
-    from fsgen.native.fit import _classify
+    from scriptforge.native.fit import _classify
     assert _classify([0.2, 0.7, 0.0, 0.0], 3.0) == "snap"
     assert _classify([0.2, 40.0, 0.0], 3.0) == "collides"
     assert _classify([0.0, 2.0, 9.0], 3.0) == "blocked"
@@ -78,7 +78,7 @@ def test_point_outside_every_part_lists_the_parts(box_solids):
 
 
 def test_cli_fit_and_view(tmp_path, monkeypatch, capsys):
-    from fsgen.cli import main
+    from scriptforge.cli import main
     monkeypatch.chdir(tmp_path)
     with pytest.raises(SystemExit) as e:
         main(["studio", "fit", str(BOX)])
@@ -150,7 +150,7 @@ def test_selecting_only_sketch_edges_says_so():
 
 
 def test_chamfer_retried_at_mm_scale_keeps_the_feature_history(monkeypatch):
-    from fsgen.fslite import geom as G
+    from scriptforge.fslite import geom as G
     real = G._blend
 
     def fails_in_meters(make, shape, edges, size, what):

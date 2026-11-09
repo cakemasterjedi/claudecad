@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from fsgen.native.local import build_local
-from fsgen.native.script import trace
+from scriptforge.native.local import build_local
+from scriptforge.native.script import trace
 
 ROOT = Path(__file__).resolve().parent.parent
 ONSHAPE_VOLUMES = {  # mm^3, from Onshape massproperties
@@ -48,7 +48,7 @@ LOCAL_ONLY = ["examples/native/m12_bolt_nut.fs"]
 
 @pytest.mark.parametrize("path", sorted(ONSHAPE_VOLUMES) + LOCAL_ONLY)
 def test_paste_export_matches(path):
-    from fsgen.native.paste import paste_export
+    from scriptforge.native.paste import paste_export
     _, chk = paste_export(trace((ROOT / path).read_text(), "studio"), "Test part")
     assert chk["ok"], chk
 
@@ -102,7 +102,7 @@ def test_helix_on_sketch_circle_needs_axis_type_circle():
 
 def _bolt_and_nut(src=None):
     import numpy as np
-    from fsgen.fslite import geom as G
+    from scriptforge.fslite import geom as G
     res = build_local(trace(src or (ROOT / "examples/native/m12_bolt_nut.fs").read_text()))
     assert res.ok and not res.partial, (res.error, res.warnings)
     bolt, nut = sorted(res.run.solids, key=lambda b: G.bbox([b.shape])[0][0])
@@ -127,9 +127,9 @@ def test_bolt_and_nut_screw_together():
 
 
 def test_paste_export_threads_follow_parameters():
-    from fsgen.fslite.runner import run_source
-    from fsgen.fslite.values import Q
-    from fsgen.native.paste import paste_export
+    from scriptforge.fslite.runner import run_source
+    from scriptforge.fslite.values import Q
+    from scriptforge.native.paste import paste_export
     src = (ROOT / "examples/native/m12_bolt_nut.fs").read_text()
     code, _ = paste_export(trace(src, "studio"), "Bolt and nut")
     native = build_local(trace(src.replace('"threadPitch", 2 * millimeter', '"threadPitch", 1.75 * millimeter')
@@ -160,7 +160,7 @@ export function build(context is Context, id is Id)
 def test_sweep_along_line_and_arc():
     """Non-helical path (corrected Frenet frame); also a sketch named "Circle" must not shadow skCircle()."""
     import math
-    from fsgen.native.paste import paste_export
+    from scriptforge.native.paste import paste_export
     res = build_local(trace(PIPE))
     assert res.ok and not res.partial, (res.error, res.warnings)
     assert res.metrics()["volume_mm3"] == pytest.approx(math.pi * 4 * (20 + 10 * math.pi / 2), rel=1e-6)
@@ -190,7 +190,7 @@ export function build(context is Context, id is Id)
 def test_helix_around_axis():
     """axisType AXIS: start radius from the axis' first point, start angle from perpendicularVector (+X here)."""
     import math
-    from fsgen.native.paste import paste_export
+    from scriptforge.native.paste import paste_export
     res = build_local(trace(AXIS_HELIX))
     assert res.ok and not res.partial, (res.error, res.warnings)
     assert res.metrics()["volume_mm3"] == pytest.approx(0.8 * (5 + 1 / 3) * 2 * math.pi * 3, rel=1e-5)
@@ -205,7 +205,7 @@ LOCAL_ONLY = {  # examples without an Onshape measurement yet: local build + pas
 
 @pytest.mark.parametrize("path", sorted(LOCAL_ONLY))
 def test_local_only_examples(path):
-    from fsgen.native.paste import paste_export
+    from scriptforge.native.paste import paste_export
     res = build_local(trace((ROOT / path).read_text()))
     assert res.ok and not res.partial, (res.error, res.warnings)
     assert res.metrics()["volume_mm3"] == pytest.approx(LOCAL_ONLY[path], rel=1e-5)

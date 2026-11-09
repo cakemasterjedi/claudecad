@@ -7,11 +7,11 @@ from pathlib import Path
 
 import pytest
 
-from fsgen.native.script import set_variables
-from fsgen.web import checkworker, parts_api  # noqa: F401
-from fsgen.web import server as srv
+from scriptforge.native.script import set_variables
+from scriptforge.web import checkworker, parts_api  # noqa: F401
+from scriptforge.web import server as srv
 
-H = {"X-Fsgen": "1"}
+H = {"X-ScriptForge": "1"}
 PLATE = Path(__file__).resolve().parent.parent / "examples" / "native" / "plate.fs"
 
 SRC = '''// variable(context, "a", 1 * mm);
@@ -64,7 +64,7 @@ def web(tmp_path_factory):
 
 def call(web, method, path, body=None):
     c = http.client.HTTPConnection("127.0.0.1", web[0], timeout=120)
-    c.request(method, path, json.dumps(body) if body is not None else None, {**H, "Cookie": f"fsgen_session={web[2]}"})
+    c.request(method, path, json.dumps(body) if body is not None else None, {**H, "Cookie": f"scriptforge_session={web[2]}"})
     r = c.getresponse()
     raw = r.read()
     return r.status, json.loads(raw) if raw else None
@@ -111,7 +111,7 @@ def test_variables_path_validation(web):
 
 
 def test_set_variables_accepts_the_reported_unit_form():
-    from fsgen.native.script import set_variables, trace
+    from scriptforge.native.script import set_variables, trace
     src = 'FeatureScript 2384;\nimport(path : "onshape/std/geometry.fs", version : "2384.0");\n' \
           'annotation { "Feature Type Name" : "P" }\nexport const p = defineFeature(function(context is Context, id is Id, definition is map)\n' \
           'precondition {}\n{\n    variable(context, "w", 80 * millimeter);\n    variable(context, "a", 30 * degree);\n});\n'

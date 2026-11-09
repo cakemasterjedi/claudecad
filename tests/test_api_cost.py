@@ -4,10 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from fsgen.costmodel import fake_onshape
-from fsgen.native import build as nb
-from fsgen.native.script import trace
-from fsgen.onshape import Onshape
+from scriptforge.costmodel import fake_onshape
+from scriptforge.native import build as nb
+from scriptforge.native.script import trace
+from scriptforge.onshape import Onshape
 
 PLATE = (Path(__file__).resolve().parent.parent / "examples" / "native" / "plate.fs").read_text()
 
@@ -76,7 +76,7 @@ def test_exports_and_metrics():
 
 
 def test_budget_stops_run():
-    from fsgen.onshape import BudgetExceeded
+    from scriptforge.onshape import BudgetExceeded
     with fake_onshape():
         o = Onshape(budget=3)
         st = nb.get_studio(o, "T", "a" * 24, "b" * 24, fresh=True)
@@ -87,7 +87,7 @@ def test_budget_stops_run():
 
 @pytest.mark.parametrize("example", ["plate.fs", "l_bracket.fs", "flange.fs", "enclosure.fs"])
 def test_estimate_equals_actual(example):
-    from fsgen.usage import estimate_push
+    from scriptforge.usage import estimate_push
     src = (PLATE_DIR / example).read_text()
     tr = trace(src)
     est = estimate_push(tr, None, metrics=False)
@@ -101,7 +101,7 @@ PLATE_DIR = Path(__file__).resolve().parent.parent / "examples" / "native"
 
 
 def test_set_official_resets_baseline(tmp_path, monkeypatch):
-    from fsgen import usage
+    from scriptforge import usage
     env = tmp_path / ".env"
     env.write_text("ONSHAPE_API_BASELINE=697\nONSHAPE_API_BASELINE_DATE=2026-01-01T00:00:00\n")
     monkeypatch.setattr(usage, "LEDGER", tmp_path / "ledger.jsonl")
@@ -115,9 +115,9 @@ MULTICOLOR = (Path(__file__).resolve().parent.parent / "examples" / "native" / "
 
 
 def test_multicolor_push_warns_and_costs_the_same(monkeypatch):
-    from fsgen import cloud
-    from fsgen.native import pushflow
-    from fsgen.usage import PROPERTIES_NOT_PUSHED, estimate_push
+    from scriptforge import cloud
+    from scriptforge.native import pushflow
+    from scriptforge.usage import PROPERTIES_NOT_PUSHED, estimate_push
 
     tr = trace(MULTICOLOR)
     assert tr.properties

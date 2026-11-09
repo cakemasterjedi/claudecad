@@ -1,14 +1,14 @@
 """Local engine regression: compat examples must keep producing Onshape's numbers.
 
-Golden values in examples/compat/golden.json were measured in Onshape (`fsgen compare`).
+Golden values in examples/compat/golden.json were measured in Onshape (`scriptforge compare`).
 """
 import json
 from pathlib import Path
 
 import pytest
 
-from fsgen.compare import compare_metrics
-from fsgen.fslite.runner import run_source
+from scriptforge.compare import compare_metrics
+from scriptforge.fslite.runner import run_source
 
 COMPAT = Path(__file__).resolve().parent.parent / "examples" / "compat"
 GOLDEN = json.loads((COMPAT / "golden.json").read_text())

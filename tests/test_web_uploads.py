@@ -1,4 +1,4 @@
-"""fsgen web uploads / measure / generate-with-images (no network, no real LLM)."""
+"""scriptforge web uploads / measure / generate-with-images (no network, no real LLM)."""
 import base64
 import http.client
 import json
@@ -7,14 +7,14 @@ import time
 
 import pytest
 
-import fsgen.web.generate_api as ga
-import fsgen.web.uploads_api as ua
-from fsgen.llm import LLMError
-from fsgen.native import generate as gen
-from fsgen.web import server as srv
-from fsgen.web.server import LoginLimiter
+import scriptforge.web.generate_api as ga
+import scriptforge.web.uploads_api as ua
+from scriptforge.llm import LLMError
+from scriptforge.native import generate as gen
+from scriptforge.web import server as srv
+from scriptforge.web.server import LoginLimiter
 
-H = {"X-Fsgen": "1"}
+H = {"X-ScriptForge": "1"}
 JPEG = b"\xff\xd8\xff\xe0" + b"\0" * 64
 PNG = b"\x89PNG\r\n\x1a\n" + b"\0" * 64
 
@@ -43,7 +43,7 @@ def call(app, method, path, body=None, cookie=True):
     c = http.client.HTTPConnection("127.0.0.1", app.port, timeout=30)
     h = dict(H)
     if cookie:
-        h["Cookie"] = f"fsgen_session={app._tok}"
+        h["Cookie"] = f"scriptforge_session={app._tok}"
     c.request(method, path, body=json.dumps(body) if body is not None else None, headers=h)
     r = c.getresponse()
     data = r.read()

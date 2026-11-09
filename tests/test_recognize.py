@@ -1,13 +1,13 @@
-"""STEP -> featuretree IR -> fsgen Part Studio script must reproduce featuretree's own rebuild."""
+"""STEP -> featuretree IR -> ScriptForge Part Studio script must reproduce featuretree's own rebuild."""
 from pathlib import Path
 
-from fsgen.native.local import build_local
-from fsgen.native.script import trace
-from fsgen.recognize import _featuretree, ir_to_script
+from scriptforge.native.local import build_local
+from scriptforge.native.script import trace
+from scriptforge.recognize import _featuretree, ir_to_script
 
 
 def test_plate_round_trip(tmp_path):
-    from fsgen.fslite.runner import export
+    from scriptforge.fslite.runner import export
     root = Path(__file__).resolve().parent.parent
     loc = build_local(trace((root / "examples/native/plate.fs").read_text()))
     step = export(loc.run, tmp_path, "plate", formats=("step",))[0]

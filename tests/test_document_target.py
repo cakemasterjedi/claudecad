@@ -3,11 +3,11 @@ from pathlib import Path
 
 import pytest
 
-from fsgen.cloud import parse_document
-from fsgen.costmodel import fake_onshape
-from fsgen.native import build as nb
-from fsgen.native.script import trace
-from fsgen.onshape import Onshape
+from scriptforge.cloud import parse_document
+from scriptforge.costmodel import fake_onshape
+from scriptforge.native import build as nb
+from scriptforge.native.script import trace
+from scriptforge.onshape import Onshape
 
 PLATE = (Path(__file__).resolve().parent.parent / "examples/native/plate.fs").read_text()
 DOC_A = "https://cad.onshape.com/documents/" + "a" * 24 + "/w/" + "1" * 24 + "/e/" + "f" * 24
@@ -19,7 +19,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("ONSHAPE_ACCESS_KEY", "a")
     monkeypatch.setenv("ONSHAPE_SECRET_KEY", "b")
-    monkeypatch.delenv("FSGEN_DOCUMENT", raising=False)
+    monkeypatch.delenv("SCRIPTFORGE_DOCUMENT", raising=False)
 
 
 def test_parse_document_urls():
@@ -29,7 +29,7 @@ def test_parse_document_urls():
 
 
 def test_same_part_name_in_two_workspaces_keeps_separate_state():
-    from fsgen.cloud import target_workspace
+    from scriptforge.cloud import target_workspace
     with fake_onshape():
         o = Onshape()
         for url in (DOC_A, DOC_B):
@@ -72,7 +72,7 @@ class _DocsApi:
         self.free, self.posts = free, []
 
     def post(self, path, body):
-        from fsgen.onshape import OnshapeError
+        from scriptforge.onshape import OnshapeError
         self.posts.append((path, body))
         if path == "documents":
             if self.free and not body["isPublic"]:
@@ -86,21 +86,21 @@ class _DocsApi:
 
 
 def test_new_document_is_private_unless_public_is_asked(tmp_path, monkeypatch):
-    from fsgen.cloud import ensure_workspace
-    monkeypatch.delenv("FSGEN_PUBLIC", raising=False)
+    from scriptforge.cloud import ensure_workspace
+    monkeypatch.delenv("SCRIPTFORGE_PUBLIC", raising=False)
     api = _DocsApi()
     ensure_workspace(api, state_file=tmp_path / "a.json")
     ensure_workspace(api, state_file=tmp_path / "b.json", public=True)
-    monkeypatch.setenv("FSGEN_PUBLIC", "1")
+    monkeypatch.setenv("SCRIPTFORGE_PUBLIC", "1")
     ensure_workspace(api, state_file=tmp_path / "c.json")
     assert [b["isPublic"] for p, b in api.posts if p == "documents"] == [False, True, True]
 
 
 def test_free_plan_refusal_says_how_to_push(tmp_path, monkeypatch):
     import pytest
-    from fsgen.cloud import ensure_workspace
-    from fsgen.onshape import OnshapeError
-    monkeypatch.delenv("FSGEN_PUBLIC", raising=False)
+    from scriptforge.cloud import ensure_workspace
+    from scriptforge.onshape import OnshapeError
+    monkeypatch.delenv("SCRIPTFORGE_PUBLIC", raising=False)
     with pytest.raises(OnshapeError, match="--public"):
         ensure_workspace(_DocsApi(free=True), state_file=tmp_path / "s.json")
     assert not (tmp_path / "s.json").exists()
@@ -120,7 +120,7 @@ export function build(context is Context, id is Id)
 
 
 def test_nearly_straight_arc_is_refused_with_a_hint():
-    from fsgen.native.script import trace
+    from scriptforge.native.script import trace
     flat = trace(_arc_script(1.364))           # 0.006 mm off the chord: Onshape flipped this one
     assert not flat.ok and "nearly straight" in flat.error and "skLineSegment" in flat.error
     assert trace(_arc_script(1.5)).ok          # clearly curved

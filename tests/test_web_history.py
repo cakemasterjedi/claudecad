@@ -3,7 +3,7 @@ import json
 import os
 import time
 
-import fsgen.web.generate_api as ga
+import scriptforge.web.generate_api as ga
 from tests.test_web_generate import FakeLLM, call, post, use_llm, web, _login, wait_done  # noqa: F401
 
 
@@ -105,8 +105,8 @@ def two(web, monkeypatch, name="Ring"):
 
 
 def test_keep_happy_path(web, monkeypatch):
-    import fsgen.native.pushflow as pf
-    from fsgen.native.build import PushResult
+    import scriptforge.native.pushflow as pf
+    from scriptforge.native.build import PushResult
     jid = two(web, monkeypatch)
     a_text = (web.root / "Ring-A.fs").read_text()
     s, d = call(web, "POST", f"/api/generate/{jid}/keep", {"variant": "A"})
@@ -167,7 +167,7 @@ def test_keep_does_not_overwrite_existing(web, monkeypatch):
 # --- revise
 
 def test_edit_prompt_contents():
-    from fsgen.native.prompts import edit_prompt
+    from scriptforge.native.prompts import edit_prompt
     p = edit_prompt("CODE_HERE", "make it thicker", "a plate 80 x 50")
     assert "CODE_HERE" in p and "make it thicker" in p and "a plate 80 x 50" in p
     assert "complete" in p and "featurescript" in p and "variable names" in p
@@ -247,7 +247,7 @@ def test_revise_errors(web, monkeypatch):
 
 
 def test_original_request_keeps_the_whole_revision_chain(tmp_path, monkeypatch):
-    from fsgen.web import generate_api as g
+    from scriptforge.web import generate_api as g
     a = g.Job("make a ring", "ring", 0, None, "make a ring\nAnswers: gold")
     b = g.Job("thicker", "ring-rev", 0, None, "x")
     b.parent = a.id

@@ -1,4 +1,4 @@
-"""fsgen web Generate API with a fake LLM (no Claude, no Onshape)."""
+"""scriptforge web Generate API with a fake LLM (no Claude, no Onshape)."""
 import http.client
 import json
 import threading
@@ -7,12 +7,12 @@ from pathlib import Path
 
 import pytest
 
-import fsgen.web.generate_api as ga  # registers the routes
-from fsgen.native import generate as gen
-from fsgen.web import server as srv
-from fsgen.web.server import LoginLimiter
+import scriptforge.web.generate_api as ga  # registers the routes
+from scriptforge.native import generate as gen
+from scriptforge.web import server as srv
+from scriptforge.web.server import LoginLimiter
 
-H = {"X-Fsgen": "1"}
+H = {"X-ScriptForge": "1"}
 PLATE = (Path(__file__).resolve().parent.parent / "examples/native/plate.fs").read_text()
 REPLY = f"Assumptions:\n- plate is 80 x 50 mm\n\n```featurescript\n{PLATE}\n```"
 
@@ -57,7 +57,7 @@ def call(app, method, path, body=None, cookie=True, headers=H):
     c = http.client.HTTPConnection("127.0.0.1", app.port, timeout=30)
     h = dict(headers)
     if cookie:
-        h["Cookie"] = f"fsgen_session={app._tok}"
+        h["Cookie"] = f"scriptforge_session={app._tok}"
     c.request(method, path, body=json.dumps(body) if body is not None else None, headers=h)
     r = c.getresponse()
     data = r.read()
@@ -72,7 +72,7 @@ def _login(web):
 
 def events(app, jid, frm=0):
     c = http.client.HTTPConnection("127.0.0.1", app.port, timeout=60)
-    c.request("GET", f"/api/generate/{jid}/events?from={frm}", headers={"Cookie": f"fsgen_session={app._tok}"})
+    c.request("GET", f"/api/generate/{jid}/events?from={frm}", headers={"Cookie": f"scriptforge_session={app._tok}"})
     r = c.getresponse()
     assert r.status == 200
     out, ev = [], None
@@ -155,7 +155,7 @@ def test_reattach_from_n_and_busy_409(web, monkeypatch):
 def test_missing_keys_in_paste_mode_still_work(web, monkeypatch):
     monkeypatch.delenv("ONSHAPE_ACCESS_KEY")
     monkeypatch.delenv("ONSHAPE_SECRET_KEY")
-    monkeypatch.setattr("fsgen.onshape.load_dotenv", lambda *a, **k: None)
+    monkeypatch.setattr("scriptforge.onshape.load_dotenv", lambda *a, **k: None)
     use_llm(monkeypatch, FakeLLM())
     call(web, "POST", "/api/generate", {"request": "a plate", "review_rounds": 0})
     job = wait_done(web)
@@ -206,7 +206,7 @@ def test_name_sanitized_and_options_clamped_in_request(web, monkeypatch):
 
 
 def test_generate_forced_local_model(web, monkeypatch):
-    import fsgen.web.uploads_api as ua
+    import scriptforge.web.uploads_api as ua
     monkeypatch.setattr(ua, "ollama_status", lambda: {"available": True, "model": "m", "models": ["m", "q:7b"]})
     use_llm(monkeypatch, FakeLLM())
     seen = []
@@ -229,7 +229,7 @@ def test_generate_forced_local_model(web, monkeypatch):
 # --- download / estimate / push
 
 def finished_job(web, monkeypatch):
-    monkeypatch.delenv("FSGEN_DOCUMENT", raising=False)
+    monkeypatch.delenv("SCRIPTFORGE_DOCUMENT", raising=False)
     use_llm(monkeypatch, FakeLLM())
     s, d = call(web, "POST", "/api/generate", {"request": "a mounting plate", "name": "Mount", "review_rounds": 0})
     assert s == 200
@@ -244,7 +244,7 @@ def test_download_script_and_zip(web, monkeypatch):
     jid, res = finished_job(web, monkeypatch)
     (web.root / res["out_dir"] / "llm_01_x.md").write_text("big log")
     c = http.client.HTTPConnection("127.0.0.1", web.port, timeout=30)
-    c.request("GET", f"/api/generate/{jid}/download?what=script", headers={"Cookie": f"fsgen_session={web._tok}"})
+    c.request("GET", f"/api/generate/{jid}/download?what=script", headers={"Cookie": f"scriptforge_session={web._tok}"})
     r = c.getresponse()
     body = r.read()
     assert r.status == 200 and r.getheader("Content-Disposition") == 'attachment; filename="Mount.fs"'
@@ -259,7 +259,7 @@ def test_download_script_and_zip(web, monkeypatch):
 
 
 def test_download_failed_running_and_no_script(web):
-    import fsgen.web.generate_api as g
+    import scriptforge.web.generate_api as g
     out = web.root / "out/web/x-bad"
     out.mkdir(parents=True)
     (out / "part_studio.fs").write_text("last attempt")
@@ -276,18 +276,18 @@ def test_download_failed_running_and_no_script(web):
 
 
 def test_estimate_makes_no_onshape_calls(web, monkeypatch):
-    import fsgen.onshape as osh
+    import scriptforge.onshape as osh
     jid, _ = finished_job(web, monkeypatch)
     monkeypatch.setattr(osh.Onshape, "__init__", lambda *a, **k: (_ for _ in ()).throw(AssertionError("Onshape used")))
     s, d = call(web, "GET", f"/api/generate/{jid}/estimate")
     assert s == 200 and d["calls"] > 0 and d["mode"] == "new" and d["budget"] == 60
     assert "estimated Onshape API calls" in d["text"] and d["left"] > 0
-    assert not Path(".fsgen_api_ledger.jsonl").exists()
+    assert not Path(".scriptforge_api_ledger.jsonl").exists()
 
 
 def test_push_success_over_budget_keys_and_lock(web, monkeypatch):
-    import fsgen.native.pushflow as pf
-    from fsgen.native.build import PushResult
+    import scriptforge.native.pushflow as pf
+    from scriptforge.native.build import PushResult
     jid, _ = finished_job(web, monkeypatch)
     seen = []
 
@@ -324,7 +324,7 @@ def test_push_success_over_budget_keys_and_lock(web, monkeypatch):
     # missing keys
     monkeypatch.delenv("ONSHAPE_RUN_BUDGET")
     monkeypatch.delenv("ONSHAPE_ACCESS_KEY")
-    monkeypatch.setattr("fsgen.usage.load_dotenv", lambda *a, **k: None)  # do not re-read the repo .env
+    monkeypatch.setattr("scriptforge.usage.load_dotenv", lambda *a, **k: None)  # do not re-read the repo .env
     s, d = call(web, "POST", f"/api/generate/{jid}/push")
     assert s == 400 and "keys" in d["error"]
 
@@ -400,9 +400,9 @@ def test_variants_run_twice(web, monkeypatch):
 
 
 def test_variant_download_estimate_push(web, monkeypatch):
-    import fsgen.native.pushflow as pf
-    from fsgen.native.build import PushResult
-    monkeypatch.delenv("FSGEN_DOCUMENT", raising=False)
+    import scriptforge.native.pushflow as pf
+    from scriptforge.native.build import PushResult
+    monkeypatch.delenv("SCRIPTFORGE_DOCUMENT", raising=False)
     use_llm(monkeypatch, FakeLLM())
     job = post(web, name="Ring", variants=["", ""])
     jid = job["id"]

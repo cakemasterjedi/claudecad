@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from fsgen import llm
-from fsgen.native import prompts
+from scriptforge import llm
+from scriptforge.native import prompts
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"\0" * 8
 
@@ -33,8 +33,8 @@ def test_ollama_request(monkeypatch, tmp_path):
     a.write_bytes(PNG)
     b.write_bytes(PNG + b"x")
     monkeypatch.setenv("OLLAMA_HOST", "box:1234")
-    monkeypatch.delenv("FSGEN_OLLAMA_MODEL", raising=False)
-    monkeypatch.delenv("FSGEN_OLLAMA_THINK", raising=False)
+    monkeypatch.delenv("SCRIPTFORGE_OLLAMA_MODEL", raising=False)
+    monkeypatch.delenv("SCRIPTFORGE_OLLAMA_THINK", raising=False)
     got = {}
 
     def urlopen(req, timeout=None):
@@ -77,7 +77,7 @@ def test_ollama_errors(monkeypatch):
     monkeypatch.setattr("urllib.request.urlopen", cut_off)
     answers[:] = ["length", "stop"]  # retried once
     assert llm.OllamaLLM().complete("s", "p") == "stop" and not answers
-    monkeypatch.setenv("FSGEN_OLLAMA_NUM_PREDICT", "4096")
+    monkeypatch.setenv("SCRIPTFORGE_OLLAMA_NUM_PREDICT", "4096")
     answers[:] = ["length", "length", "stop"]
     with pytest.raises(llm.LLMError, match="cut off twice .*4096 answer tokens"):
         llm.OllamaLLM().complete("s", "p")
@@ -85,11 +85,11 @@ def test_ollama_errors(monkeypatch):
 
 
 def test_ollama_status(monkeypatch):
-    monkeypatch.setenv("FSGEN_OLLAMA_MODEL", "m1")
+    monkeypatch.setenv("SCRIPTFORGE_OLLAMA_MODEL", "m1")
     monkeypatch.setattr("urllib.request.urlopen",
                         lambda *a, **k: _Resp(json.dumps({"models": [{"name": "m1"}, {"name": "m2"}]}).encode()))
     assert llm.ollama_status() == {"available": True, "model": "m1", "models": ["m1", "m2"]}
-    monkeypatch.setenv("FSGEN_OLLAMA_MODEL", "other")
+    monkeypatch.setenv("SCRIPTFORGE_OLLAMA_MODEL", "other")
     assert llm.ollama_status()["available"] is False
 
     def boom(*a, **k):
@@ -127,8 +127,8 @@ def test_measure_prompt():
 
 
 def test_claude_llm_ignores_llm_command(monkeypatch):
-    from fsgen import llm
-    monkeypatch.setenv("FSGEN_LLM_COMMAND", "ollama run x")
+    from scriptforge import llm
+    monkeypatch.setenv("SCRIPTFORGE_LLM_COMMAND", "ollama run x")
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
     monkeypatch.setattr(llm, "_has_anthropic_key", lambda: False)

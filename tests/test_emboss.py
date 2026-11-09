@@ -5,13 +5,13 @@ import zipfile
 import pytest
 from shapely.geometry import box
 
-from fsgen.cli import main
-from fsgen.fslite import geom as G
-from fsgen.native import colorlayers as cl
-from fsgen.native.colorlayers import Layer
-from fsgen.native.emboss import Emboss
-from fsgen.native.local import build_local
-from fsgen.native.script import trace
+from scriptforge.cli import main
+from scriptforge.fslite import geom as G
+from scriptforge.native import colorlayers as cl
+from scriptforge.native.colorlayers import Layer
+from scriptforge.native.emboss import Emboss
+from scriptforge.native.local import build_local
+from scriptforge.native.script import trace
 
 HEAD = 'FeatureScript 3083;\nimport(path : "onshape/std/common.fs", version : "3083.0");\n'
 
@@ -106,7 +106,7 @@ def test_cylinder_emboss_follows_the_curve_and_is_disjoint():
     assert {k: len(v) for k, v in by.items()} == {"Barrel": 1, "Gold": 1, "Navy": 1}
     # outer surface: apex at x = R + height, only a thin skin outside the barrel
     import build123d as bd
-    from fsgen.native.meshing import to_mm
+    from scriptforge.native.meshing import to_mm
     gx = bd.Compound(to_mm(by["Gold"][0].shape)).bounding_box()
     nx = bd.Compound(to_mm(by["Navy"][0].shape)).bounding_box()
     assert gx.max.X == pytest.approx(R + 0.8, abs=0.01) and gx.min.X == pytest.approx((R * R - 16) ** 0.5, abs=0.01)   # the barrel surface at y = +-4

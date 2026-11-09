@@ -13,12 +13,12 @@ from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeSolid, BRepBuilderAPI_Sewing, 
 from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
 from OCP.gp import gp_Pnt, gp_Trsf
 
-from fsgen.fslite import geom as G
-from fsgen.native.fit import explode, place
-from fsgen.native.geomcheck import thin_wall_report, thin_walls, validity, validity_report
-from fsgen.native.local import build_local
-from fsgen.native.script import trace
-from fsgen.native.section import section
+from scriptforge.fslite import geom as G
+from scriptforge.native.fit import explode, place
+from scriptforge.native.geomcheck import thin_wall_report, thin_walls, validity, validity_report
+from scriptforge.native.local import build_local
+from scriptforge.native.script import trace
+from scriptforge.native.section import section
 
 ROOT = Path(__file__).resolve().parent.parent
 BOX = ROOT / "examples/native/fit/lidded_box.fs"
@@ -85,7 +85,7 @@ def test_min_wall_threshold_is_respected():
 
 # ---------------------------------------------------------------- exports
 def test_cli_build_writes_per_part_files_and_3mf(tmp_path, monkeypatch, capsys):
-    from fsgen.cli import main
+    from scriptforge.cli import main
     monkeypatch.chdir(tmp_path)
     with pytest.raises(SystemExit) as e:
         main(["studio", "build", str(BOX), "--formats", "step,stl,3mf"])
@@ -107,7 +107,7 @@ def test_cli_build_writes_per_part_files_and_3mf(tmp_path, monkeypatch, capsys):
 
 
 def test_default_formats_have_no_3mf_and_unnamed_parts(tmp_path, monkeypatch):
-    from fsgen.cli import main
+    from scriptforge.cli import main
     monkeypatch.chdir(tmp_path)
     src = tmp_path / "two.fs"
     src.write_text(BOX.read_text())            # no two.fit.toml next to it: parts are named part<N>
@@ -119,7 +119,7 @@ def test_default_formats_have_no_3mf_and_unnamed_parts(tmp_path, monkeypatch):
 
 
 def test_cli_rejects_unknown_format(tmp_path, monkeypatch, capsys):
-    from fsgen.cli import main
+    from scriptforge.cli import main
     monkeypatch.chdir(tmp_path)
     with pytest.raises(SystemExit) as e:
         main(["studio", "build", str(BOX), "--formats", "obj"])
@@ -146,7 +146,7 @@ def test_section_has_polygons_for_both_parts_and_misses_when_off_the_parts(place
 
 
 def test_cli_fit_writes_the_section_png(tmp_path, monkeypatch, capsys):
-    from fsgen.cli import main
+    from scriptforge.cli import main
     monkeypatch.chdir(tmp_path)
     with pytest.raises(SystemExit) as e:
         main(["studio", "fit", str(BOX)])
@@ -166,7 +166,7 @@ def test_explode_spreads_parts_in_order_along_the_direction(placed):
 
 
 def test_viewer_has_an_exploded_scene(tmp_path, monkeypatch):
-    from fsgen.cli import main
+    from scriptforge.cli import main
     monkeypatch.chdir(tmp_path)
     with pytest.raises(SystemExit) as e:
         main(["studio", "view", str(BOX)])
@@ -211,8 +211,8 @@ def test_section_cuts_a_revolved_part_through_its_seam_plane():
 
 
 def test_cli_build_refuses_to_export_invalid_geometry(tmp_path, monkeypatch, capsys):
-    from fsgen.cli import main
-    from fsgen.native import geomcheck
+    from scriptforge.cli import main
+    from scriptforge.native import geomcheck
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(geomcheck, "validity", lambda solids: [geomcheck.Validity(1, ["invalid B-rep (BRepCheck)"], 1)])
     with pytest.raises(SystemExit) as e:
