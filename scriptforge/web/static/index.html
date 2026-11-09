@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ScriptForge</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<section id="login" class="login" hidden>
+  <form id="login-form" class="card">
+    <h1>ScriptForge</h1>
+    <p class="login-sub">FeatureScript parts, generated and checked locally.</p>
+    <label for="password">Password</label>
+    <input id="password" type="password" autocomplete="current-password" required>
+    <button type="submit">Log in</button>
+    <p id="login-error" class="error" role="alert"></p>
+  </form>
+</section>
+<section id="pw" class="login pw-overlay" hidden>
+  <form id="pw-form" class="card">
+    <h2>Change password</h2>
+    <label for="pw-current">Current password</label>
+    <input id="pw-current" type="password" autocomplete="current-password" required>
+    <label for="pw-new">New password (8+ characters)</label>
+    <input id="pw-new" type="password" autocomplete="new-password" minlength="8" required>
+    <label for="pw-repeat">Repeat new password</label>
+    <input id="pw-repeat" type="password" autocomplete="new-password" minlength="8" required>
+    <button type="submit">Save password</button>
+    <button id="pw-cancel" class="ghost" type="button">Cancel</button>
+    <p id="pw-msg" class="error" role="alert"></p>
+  </form>
+</section>
+<div id="app" hidden>
+  <header class="bar">
+    <strong class="brand"><span>ScriptForge</span></strong>
+    <nav id="tabs" aria-label="Sections"></nav>
+    <details id="account" class="menu">
+      <summary class="ghost" aria-label="Account menu">&#8942;</summary>
+      <div class="menu-list">
+        <button id="change-pw" class="ghost" type="button">Change password</button>
+        <button id="logout" class="ghost" type="button">Log out</button>
+      </div>
+    </details>
+  </header>
+  <main id="panels"></main>
+</div>
+<script defer src="/static/app.js"></script>
+<script defer src="/static/variables.js"></script>
+<script defer src="/static/usage.js"></script>
+<script defer src="/static/parts.js"></script>
+<script defer src="/static/generate.js"></script>
+</body>
+</html>

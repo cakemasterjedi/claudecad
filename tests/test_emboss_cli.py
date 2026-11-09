@@ -1,14 +1,14 @@
-"""`fsgen emboss`: SVG art onto an existing native script, built locally (0 Onshape calls)."""
+"""`scriptforge emboss`: SVG art onto an existing native script, built locally (0 Onshape calls)."""
 import re
 import zipfile
 
 import pytest
 
-from fsgen.cli import main
-from fsgen.native import geomcheck
-from fsgen.native.local import build_local
-from fsgen.native.paste import paste_export
-from fsgen.native.script import trace
+from scriptforge.cli import main
+from scriptforge.native import geomcheck
+from scriptforge.native.local import build_local
+from scriptforge.native.paste import paste_export
+from scriptforge.native.script import trace
 
 HEAD = 'FeatureScript 3083;\nimport(path : "onshape/std/common.fs", version : "3083.0");\n'
 
@@ -99,7 +99,7 @@ def test_skip_color_and_heights(work):
     loc = build(work / "box_emboss.fs")
     assert set(by_name(loc)) >= {"Yellow", "Black", "White"} and len(loc.run.solids) == 4
     import build123d as bd
-    from fsgen.native.meshing import to_mm
+    from scriptforge.native.meshing import to_mm
     top = lambda n: bd.Compound(to_mm(by_name(loc)[n][0].shape)).bounding_box().max.Z
     assert top("Yellow") == pytest.approx(4 + 1.2, abs=0.01)
     assert top("Black") == pytest.approx(4 + 0.6, abs=0.01)
@@ -115,7 +115,7 @@ def test_flip_negative_offset(work):
     assert run("art.svg", "box.fs", "--flip", "--skip-color", "#ffffff", "--mirror") == 0
     loc = build(work / "box_emboss.fs")
     import build123d as bd
-    from fsgen.native.meshing import to_mm
+    from scriptforge.native.meshing import to_mm
     assert bd.Compound(to_mm(by_name(loc)["Black"][0].shape)).bounding_box().min.Z == pytest.approx(-0.6, abs=0.01)
 
 
@@ -143,7 +143,7 @@ def test_paste_matches(work):
 
 def test_cylinder_follows_surface(work):
     import build123d as bd
-    from fsgen.native.meshing import to_mm
+    from scriptforge.native.meshing import to_mm
     assert run("art.svg", "cyl.fs", "--cylinder", "20", "--plane", "right", "--offset", "20", "--center", "0,15",
                "--width", "16", "--skip-color", "#ffffff", "--heights", "Yellow=0.9") == 0
     loc = build(work / "cyl_emboss.fs")
@@ -162,7 +162,7 @@ def test_cylinder_negative_side(work):
     assert run("art.svg", "cyl.fs", "--cylinder", "20", "--plane", "right", "--offset", "-20", "--mirror",
                "--center", "0,15", "--width", "16", "--skip-color", "#ffffff") == 0
     import build123d as bd
-    from fsgen.native.meshing import to_mm
+    from scriptforge.native.meshing import to_mm
     loc = build(work / "cyl_emboss.fs")
     assert bd.Compound(to_mm(by_name(loc)["Black"][0].shape)).bounding_box().min.X == pytest.approx(-(R + 0.6), abs=0.01)
 
@@ -183,6 +183,6 @@ def test_define_feature_style_and_comments(work):
            '    skSolve(s);\n'
            '    extrude(context, id + "Base", { "entities" : qSketchRegion(id + "Base sketch"), "endBound" : BoundingType.BLIND, "depth" : 4 * millimeter });\n'
            '});\n')
-    from fsgen.native import embossfile as ef
+    from scriptforge.native import embossfile as ef
     end = ef.find_body_end(src)
     assert src[end:].startswith("}\n);") or src[end:].startswith("}")

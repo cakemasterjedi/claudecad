@@ -1,15 +1,15 @@
-"""Sketches on part faces: fsgen's frame, conversion to Onshape's measured frame, cap/parallel-plane queries."""
+"""Sketches on part faces: ScriptForge's frame, conversion to Onshape's measured frame, cap/parallel-plane queries."""
 from pathlib import Path
 
 import numpy as np
 import pytest
 
-from fsgen.costmodel import fake_onshape
-from fsgen.native import build as nb
-from fsgen.native.local import build_local
-from fsgen.native.script import face_sketch_frame, trace
-from fsgen.onshape import Onshape
-from fsgen.usage import estimate_push
+from scriptforge.costmodel import fake_onshape
+from scriptforge.native import build as nb
+from scriptforge.native.local import build_local
+from scriptforge.native.script import face_sketch_frame, trace
+from scriptforge.onshape import Onshape
+from scriptforge.usage import estimate_push
 
 SCRIPT = (Path(__file__).resolve().parent.parent / "examples/native/face_sketches.fs").read_text()
 # Onshape's evPlane on faces of test parts (origin mm, normal, x), measured 2026-10-10
@@ -35,10 +35,10 @@ def test_conversion_to_onshape_frame_keeps_world_positions(name):
     origin, fx, fy = face_sketch_frame(o, n)
     y = np.cross(n, x)
     for p in ([0, 0], [0.012, -0.005], [-0.02, 0.031]):
-        world_fsgen = origin + p[0] * fx + p[1] * fy
+        world_scriptforge = origin + p[0] * fx + p[1] * fy
         u, v = R @ p + t
         # Onshape's sketch on a face: origin = projected world origin, x = evPlane's x (evOwnerSketchPlane)
-        assert np.allclose(origin + u * x + v * y, world_fsgen, atol=1e-6)  # measured values are rounded
+        assert np.allclose(origin + u * x + v * y, world_scriptforge, atol=1e-6)  # measured values are rounded
 
 
 def test_local_build_and_cap_queries():

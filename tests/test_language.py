@@ -1,10 +1,10 @@
 """FS-Lite language semantics (no geometry)."""
 import pytest
 
-from fsgen.fslite.interp import Interpreter
-from fsgen.fslite.lexer import FSSyntaxError
-from fsgen.fslite.stdlib import StdLib
-from fsgen.fslite.values import FSError, Q, Vec, fmt
+from scriptforge.fslite.interp import Interpreter
+from scriptforge.fslite.lexer import FSSyntaxError
+from scriptforge.fslite.stdlib import StdLib
+from scriptforge.fslite.values import FSError, Q, Vec, fmt
 
 
 def ev(body: str):

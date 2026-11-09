@@ -5,7 +5,7 @@ dimensions. The resulting Part Studios are in the [public Onshape document](http
 (open it with any Onshape account and copy it to edit).
 
 Calls are for a native push with the default settings (variables in a Variable Studio, 1 volume check), from
-`fsgen studio check`; the estimate matched the real count when tested (pillow block: 14 measured). Paste mode
+`scriptforge studio check`; the estimate matched the real count when tested (pillow block: 14 measured). Paste mode
 always costs 0 calls.
 
 | part | description | features | calls |
@@ -20,7 +20,7 @@ Notes:
 
 - The fan adapter request contradicts itself: six 4 mm slots 12 mm apart need 64 mm, but the left half is
   50 mm. The model used an 8 mm pitch and said why; `#slotPitch` is a variable, so you can change it.
-- Features don't include the Variable Studio. With `FSGEN_VARIABLES=tree` every variable is a feature
+- Features don't include the Variable Studio. With `SCRIPTFORGE_VARIABLES=tree` every variable is a feature
   (1 call each) instead: the fan adapter then has 26 features.
 - The enclosure and flange in the document were not generated: they are hand-written reference scripts
   ([examples/native](native/)) that serve as the AI's examples and as tests. 14 and 11 calls.

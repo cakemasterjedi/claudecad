@@ -1,18 +1,18 @@
-# fsgen reference
+# ScriptForge reference
 
 Detailed reference moved from the README: API budget, rules, feature catalog workflow, LLM backend, all
-commands, the FS-Lite language, and Onshape behaviours measured while building fsgen.
+commands, the FS-Lite language, and Onshape behaviours measured while building scriptforge.
 
 ## Onshape API budget
 
 The EDU plan allows **2500 counted calls per year**. Onshape counts every 2xx/3xx response (each redirect hop
 too); 4xx/5xx, browser use and public App Store apps are free ([Onshape API limits](https://onshape-public.github.io/docs/auth/limits/)).
 
-- Every call is logged in `.fsgen_api_ledger.jsonl`; each command ends with `Onshape API calls this run: N`.
-- `fsgen usage` shows used/remaining vs. the allocation; record Onshape's official count with
-  `fsgen usage --set-official N` (e.g. from the FeatureScript MCP server's `get_api_usage`).
+- Every call is logged in `.scriptforge_api_ledger.jsonl`; each command ends with `Onshape API calls this run: N`.
+- `scriptforge usage` shows used/remaining vs. the allocation; record Onshape's official count with
+  `scriptforge usage --set-official N` (e.g. from the FeatureScript MCP server's `get_api_usage`).
 - `ONSHAPE_RUN_BUDGET` (default 60) or `--budget N` stops a run before it overspends.
-- `tests/test_api_cost.py` runs the real client against a fake Onshape (`fsgen/costmodel.py`) and fails if a
+- `tests/test_api_cost.py` runs the real client against a fake Onshape (`scriptforge/costmodel.py`) and fails if a
   workflow gets more expensive. Use the fake for development, not the real API.
 
 | operation | calls |
@@ -27,9 +27,9 @@ too); 4xx/5xx, browser use and public App Store apps are free ([Onshape API limi
 | export via API: STL / STEP | 1 / ~4 (or free from the Onshape UI) |
 
 `generate` is **local-first**: the script is checked, built, repaired and reviewed with the local builder
-(`fsgen/native/local.py`, matches Onshape's volume on all 8 reference parts), then pushed to Onshape once and
+(`scriptforge/native/local.py`, matches Onshape's volume on all 8 reference parts), then pushed to Onshape once and
 confirmed with one massproperties call. Variables go into one Variable Studio (3 calls for any number;
-`FSGEN_VARIABLES=tree` puts them in the feature tree instead, 1 call each). Measured: the pillow block
+`SCRIPTFORGE_VARIABLES=tree` puts them in the feature tree instead, 1 call each). Measured: the pillow block
 (9 features, 5 variables) cost 14 calls in total. Exports are opt-in (`--export step,stl`); local STEP/STL
 are always written.
 
@@ -40,11 +40,11 @@ sketch + extrude REMOVE*). It's sent with every request and checked in the revie
 
 ## Which features are available, and how new ones get added
 
-`fsgen features` shows the catalog; `fsgen features <type>` shows one feature with its settable parameters.
+`scriptforge features` shows the catalog; `scriptforge features <type>` shows one feature with its settable parameters.
 
 | status | meaning |
 |---|---|
-| **verified** | used in a reference example in `examples/native/` that builds cleanly in Onshape; documented in the prompt with notes (`fsgen/native/catalog.json`) |
+| **verified** | used in a reference example in `examples/native/` that builds cleanly in Onshape; documented in the prompt with notes (`scriptforge/native/catalog.json`) |
 | **learned** | built successfully in Onshape during a `generate`/`studio push` run; the working call is saved in the catalog and shown to the model as an example from then on |
 | **available** | present in Onshape's feature specs (all 98 standard features). The checker validates parameter ids, enum values and units offline, so the model can try it; success promotes it to *learned*, and failures are saved as notes |
 
@@ -54,21 +54,21 @@ Currently verified: Variable, Sketch, Extrude, Revolve, Fillet, Chamfer, Plane, 
 *learned*. If it fails, the Onshape error goes back to the model for a repair and is stored as a note.
 
 **Promoting to verified (manual, when a feature matters):**
-1. `fsgen features <type>` to see its parameters (and learned example/failures).
+1. `scriptforge features <type>` to see its parameters (and learned example/failures).
 2. Write or copy a small script in `examples/native/` that uses it the way you want.
-3. `fsgen studio push examples/native/<file>.fs --fresh --export` and check the part and tree in Onshape.
-4. Add an entry with status `verified` and notes to `fsgen/native/catalog.json`; if it's a core feature, add it to
-   the spec in `fsgen/native/prompts.py` (or to `FEW_SHOT`).
+3. `scriptforge studio push examples/native/<file>.fs --fresh --export` and check the part and tree in Onshape.
+4. Add an entry with status `verified` and notes to `scriptforge/native/catalog.json`; if it's a core feature, add it to
+   the spec in `scriptforge/native/prompts.py` (or to `FEW_SHOT`).
 
 Parameter types the translator can set: enum, quantity (expressions with `#vars`), boolean, string, query,
 feature list and arrays (e.g. loft profiles). Lookup tables (Hole standards), reference tables and part-studio
-references stay at their Onshape defaults. `fsgen features --refresh` re-downloads the specs after Onshape updates.
+references stay at their Onshape defaults. `scriptforge features --refresh` re-downloads the specs after Onshape updates.
 
 ## LLM backend
 
-`fsgen generate` picks the LLM in this order:
+`scriptforge generate` picks the LLM in this order:
 
-1. `FSGEN_LLM_COMMAND` / `--backend command --llm-command "…"`: any LLM with a command-line tool (prompt on
+1. `SCRIPTFORGE_LLM_COMMAND` / `--backend command --llm-command "…"`: any LLM with a command-line tool (prompt on
    stdin, answer on stdout), e.g. `ollama run qwen2.5-coder:32b`, `gemini -p`, `llm -m <model>`.
 2. `ANTHROPIC_API_KEY` (or an `ant auth login` profile): the Anthropic SDK with `claude-opus-5-5` (streaming,
    adaptive thinking, prompt caching, server-side refusal fallback); the review sees the preview image.
@@ -76,12 +76,12 @@ references stay at their Onshape defaults. `fsgen features --refresh` re-downloa
    (`--no-web` to turn off) and reads the preview image with its Read tool.
 
 `--backend ollama` (never chosen by `auto`) runs a local model through the Ollama HTTP API (text and images, no
-extra packages). `OLLAMA_HOST` (default `http://localhost:11434`) and `FSGEN_OLLAMA_MODEL` (default
+extra packages). `OLLAMA_HOST` (default `http://localhost:11434`) and `SCRIPTFORGE_OLLAMA_MODEL` (default
 `gemma4:12b-it-qat`) configure it; thinking is off (faster, and a long think can leave the answer empty)
-unless `FSGEN_OLLAMA_THINK=1`; `FSGEN_OLLAMA_NUM_CTX` (default 32768 tokens, Ollama itself defaults to 4096) sets the context window;
-`FSGEN_OLLAMA_NUM_PREDICT` (default 8192) caps the answer so a looping model stops early (a cut-off answer is retried once); sampling uses the model's
-own Modelfile defaults unless `FSGEN_OLLAMA_TEMPERATURE` is set (a low temperature makes qwen3.5 repeat itself); `FSGEN_LLM_TIMEOUT` (default 1800 s) applies to all backends.
-In `fsgen web`, the Generate tab's *Force local model* option chooses any installed Ollama model and uses it for both
+unless `SCRIPTFORGE_OLLAMA_THINK=1`; `SCRIPTFORGE_OLLAMA_NUM_CTX` (default 32768 tokens, Ollama itself defaults to 4096) sets the context window;
+`SCRIPTFORGE_OLLAMA_NUM_PREDICT` (default 8192) caps the answer so a looping model stops early (a cut-off answer is retried once); sampling uses the model's
+own Modelfile defaults unless `SCRIPTFORGE_OLLAMA_TEMPERATURE` is set (a low temperature makes qwen3.5 repeat itself); `SCRIPTFORGE_LLM_TIMEOUT` (default 1800 s) applies to all backends.
+In `scriptforge web`, the Generate tab's *Force local model* option chooses any installed Ollama model and uses it for both
 measurement reading and generation (`model` on `/api/measure`, `local_model` on `/api/generate`).
 A finished generation can be previewed in 3D, downloaded (`GET /api/generate/{id}/download?what=script|zip`) and pushed
 to Onshape (`GET .../estimate` is free; `POST .../push` is refused over `ONSHAPE_RUN_BUDGET`, default 60, or the
@@ -89,39 +89,47 @@ allocation left, and the UI confirms the estimate first).
 
 In a chat, any coding assistant can be the designer instead: see `AGENTS.md`.
 
+## Environment variables
+
+Settings are read from `SCRIPTFORGE_<NAME>` (environment or `.env`): `LLM_COMMAND`, `LLM_TIMEOUT`, `OLLAMA_MODEL`,
+`OLLAMA_THINK`, `OLLAMA_NUM_CTX`, `OLLAMA_NUM_PREDICT`, `OLLAMA_TEMPERATURE`, `DOCUMENT`, `PUBLIC`, `VARIABLES`,
+`DROPBOX_DIR`, `WEB_PASSWORD`, `WEB_CHECK_TIMEOUT`. The old `FSGEN_<NAME>` names still work as a fallback; when both
+are set, `SCRIPTFORGE_*` wins. Changing the web password writes `SCRIPTFORGE_WEB_PASSWORD` and removes any old
+`FSGEN_WEB_PASSWORD` line from `.env`. State files `.fsgen_*` are renamed to `.scriptforge_*` automatically on first use.
+
 ## Commands
 
 | command | what it does |
 |---|---|
-| `fsgen generate "<request>" [--name N] [--paste] [--reviews 2] [--no-web] [--document URL]` | **native**: prompt → script → Onshape feature tree → repair/review → `out/native/<run>/` (script, STEP/STL, Onshape renders, transcripts) |
+| `scriptforge generate "<request>" [--name N] [--paste] [--reviews 2] [--no-web] [--document URL]` | **native**: prompt → script → Onshape feature tree → repair/review → `out/native/<run>/` (script, STEP/STL, Onshape renders, transcripts) |
 | `/make-part <description>` (in a Claude Code chat) | the chat designs `parts/<name>.fs` with the commands below; you steer, then paste or push |
-| `fsgen studio paste script.fs` | custom feature to paste into a Feature Studio (0 calls; clipboard + optional Dropbox copy) |
-| `fsgen emboss art.svg file.fs [-o OUT.fs] [--plane --offset --cylinder R ...]` | flat-color SVG art onto a script as raised multicolor bodies (0 calls); see `fsgen emboss -h` |
-| `fsgen recognize part.step` | STEP → editable Part Studio script via featuretree recognition (0 calls) |
-| `fsgen usage [--set-official N]` | API calls used/left |
-| `fsgen spec` | print the instructions/spec the designer follows (rules, catalog, examples) |
-| `fsgen studio check script.fs` | trace + build locally (0 calls): features, geometry report, errors, print check (overhangs flatter than 45° off the bed) |
-| `fsgen studio build script.fs` | local build + STEP/STL/PNG in `out/<name>/` (0 calls) |
-| `fsgen studio fit script.fs [--fit F]` | assembled-position check from `script.fit.toml` (0 calls): parts moved from the print layout into place, components (STEP files, cylinders, boxes), overlaps, and motions (hinge turned, part slid off) with free/snap/blocked/collides verdicts; writes `out/<name>/<name>_assembled.step`. Format: `fsgen/native/fit.py`, example: `examples/native/fit/` |
-| `fsgen studio view script.fs [--fit F]` | interactive 3D viewer `out/<name>/<name>_view.html` (0 calls): print layout and, with a fit file, the assembly; hide parts, cut along X/Y/Z |
-| `fsgen studio push script.fs [--name N] [--fresh] [--export] [--document URL]` | build/update the Part Studio incrementally (only from the first changed feature); `--document` (or `FSGEN_DOCUMENT`) builds in your own Onshape document instead of `fsgen-workspace` |
-| `fsgen features [type] [--all] [--refresh]` | feature catalog / one feature's settable parameters |
-| `fsgen generate "<request>" --ask` | the model may ask 1-4 clarifying questions first (answered on the terminal, then one re-run into `<out>-answered`; without a terminal the questions are printed as JSON and the exit code is 2) |
-| `fsgen generate "<request>" --variant "<note A>" --variant "<note B>"` / `--ab` | make versions A, B, ... one after the other (`<out>/A`, `<out>/B`; B defaults to a different alternative to A's assumptions); prints `{"variants": [...]}` |
-| `fsgen generate --custom "<request>" [--cloud]` | older single-custom-feature mode with local OCCT build/repair/review |
-| `fsgen run part.fs [-p name=value] [--png]` | local build + STEP/STL (+ 4-view PNG) |
-| `fsgen watch part.fs` | rebuild on save, live three.js viewer at http://127.0.0.1:8765 |
-| `fsgen push part.fs [-p ...]` | upload to Onshape, regenerate, diff against local, export (`--formats step,stl,x_t`) |
-| `fsgen eval part.fs` | Onshape error messages with source line numbers |
-| `fsgen compare examples/compat/*.fs` | local engine vs Onshape on volume / area / body count / bbox |
+| `scriptforge studio paste script.fs` | custom feature to paste into a Feature Studio (0 calls; clipboard + optional Dropbox copy) |
+| `scriptforge emboss art.svg file.fs [-o OUT.fs] [--plane --offset --cylinder R ...]` | flat-color SVG art onto a script as raised multicolor bodies (0 calls); see `scriptforge emboss -h` |
+| `scriptforge recognize part.step` | STEP → editable Part Studio script via featuretree recognition (0 calls) |
+| `scriptforge usage [--set-official N]` | API calls used/left |
+| `scriptforge spec` | print the instructions/spec the designer follows (rules, catalog, examples) |
+| `scriptforge studio check script.fs` | trace + build locally (0 calls): features, geometry report, errors, print check (overhangs flatter than 45° off the bed) |
+| `scriptforge studio build script.fs` | local build + STEP/STL/PNG in `out/<name>/` (0 calls) |
+| `scriptforge studio fit script.fs [--fit F]` | assembled-position check from `script.fit.toml` (0 calls): parts moved from the print layout into place, components (STEP files, cylinders, boxes), overlaps, and motions (hinge turned, part slid off) with free/snap/blocked/collides verdicts; writes `out/<name>/<name>_assembled.step`. Format: `scriptforge/native/fit.py`, example: `examples/native/fit/` |
+| `scriptforge studio view script.fs [--fit F]` | interactive 3D viewer `out/<name>/<name>_view.html` (0 calls): print layout and, with a fit file, the assembly; hide parts, cut along X/Y/Z |
+| `scriptforge studio push script.fs [--name N] [--fresh] [--export] [--document URL]` | build/update the Part Studio incrementally (only from the first changed feature); `--document` (or `SCRIPTFORGE_DOCUMENT`) builds in your own Onshape document instead of `fsgen-workspace` |
+| `scriptforge features [type] [--all] [--refresh]` | feature catalog / one feature's settable parameters |
+| `scriptforge generate "<request>" --ask` | the model may ask 1-4 clarifying questions first (answered on the terminal, then one re-run into `<out>-answered`; without a terminal the questions are printed as JSON and the exit code is 2) |
+| `scriptforge generate "<request>" --variant "<note A>" --variant "<note B>"` / `--ab` | make versions A, B, ... one after the other (`<out>/A`, `<out>/B`; B defaults to a different alternative to A's assumptions); prints `{"variants": [...]}` |
+| `scriptforge generate --custom "<request>" [--cloud]` | older single-custom-feature mode with local OCCT build/repair/review |
+| `scriptforge run part.fs [-p name=value] [--png]` | local build + STEP/STL (+ 4-view PNG) |
+| `scriptforge watch part.fs` | rebuild on save, live three.js viewer at http://127.0.0.1:8765 |
+| `scriptforge push part.fs [-p ...]` | upload to Onshape, regenerate, diff against local, export (`--formats step,stl,x_t`) |
+| `scriptforge eval part.fs` | Onshape error messages with source line numbers |
+| `scriptforge compare examples/compat/*.fs` | local engine vs Onshape on volume / area / body count / bbox |
 | `pytest` | language tests + compat regression against Onshape-measured golden values |
 
-The Onshape side uses one document (`fsgen-workspace`, id stored in `.fsgen_workspace.json`) with a Feature
+The Onshape side uses one document (`fsgen-workspace`, id stored in `.scriptforge_workspace.json`) with a Feature
 Studio `Gen`, a Part Studio holding a single instance of the generated feature, and an empty `Eval` Part Studio.
 
 ## What FS-Lite supports
 
-See `fsgen/prompts.py` (the spec the LLM gets) for the full list. In short:
+See `scriptforge/prompts.py` (the spec the LLM gets) for the full list. In short:
 
 - **Language:** var/const, functions and lambdas, if/for/for-in/while, arrays and maps with value semantics,
   unit-checked arithmetic (`millimeter`, `degree`, …), vectors, `~` string concatenation, `throw`/`try`.
@@ -150,9 +158,9 @@ See `fsgen/prompts.py` (the spec the LLM gets) for the full list. In short:
 | `opRevolve` `angleBack` | sweep runs from **+angleBack** to angleForward (positive sense, wraps): (90°, 30°) gives a 60° wedge |
 | `opShell` | positive thickness grows **outward** with sharp corners |
 | `fSphere` | `center` must be a vertex Query, not a point |
-| Feature Studio compile errors | not exposed by the REST API (empty `featurespecs` only). `evalFeatureScript` returns messages + lines, so `fsgen` rebuilds the feature body as a lambda for diagnostics |
+| Feature Studio compile errors | not exposed by the REST API (empty `featurespecs` only). `evalFeatureScript` returns messages + lines, so `scriptforge` rebuilds the feature body as a lambda for diagnostics |
 | Variable feature names | the UI names them with the template `###name = #value` and fills a hidden `value` parameter; a literal name like `#width` shows as "?" in the tree |
-| omitted feature parameters | not always defaulted by the API: `cPlane` without `cplaneType` fails (`REGEN_ERROR`). fsgen sends complete parameter sets |
+| omitted feature parameters | not always defaulted by the API: `cPlane` without `cplaneType` fails (`REGEN_ERROR`). ScriptForge sends complete parameter sets |
 | feature errors | featureState has no message; `getFeatureError(context, makeId(fid))` via evalFeatureScript gives e.g. `FILLET_SELECT_EDGES` + faulty parameters |
 | default planes | Top: x→+X, y→+Y (normal +Z); Front: x→+X, y→+Z (normal −Y); Right: x→+Y, y→+Z (normal +X) |
 | `qParallelEdges` | signature is `(edges, directionVector)` |

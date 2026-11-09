@@ -1,6 +1,6 @@
 # Findings log
 
-Running log of what we learned while building fsgen (newest sections at the bottom). Each entry says
+Running log of what we learned while building ScriptForge (newest sections at the bottom). Each entry says
 how it was established. API-call counts refer to the Onshape EDU allocation (2500 calls/year).
 
 ## 2026-10-01 — Onshape API basics
@@ -8,11 +8,11 @@ how it was established. API-call counts refer to the Onshape EDU allocation (250
 - **Auth**: API keys work with HTTP basic auth (`access:secret`); no HMAC signing needed. (tested)
 - **Feature Studio compile errors are not exposed by the REST API**: a broken Feature Studio just returns
   empty `featurespecs`. `POST /partstudios/.../featurescript` (evalFeatureScript) does return parse and
-  runtime errors with line numbers, so fsgen re-wraps code as a lambda for diagnostics. (tested)
+  runtime errors with line numbers, so ScriptForge re-wraps code as a lambda for diagnostics. (tested)
 - **Feature errors**: `featureState` only says OK/INFO/WARNING/ERROR; `getFeatureError(context, makeId(fid))`
   via evalFeatureScript gives the reason (e.g. `FILLET_SELECT_EDGES`, faulty parameter). (tested)
 - **Exports redirect** to an external storage host; following redirects with credentials would leak the API
-  key to that host — fsgen only sends credentials to cad.onshape.com. (code review)
+  key to that host — ScriptForge only sends credentials to cad.onshape.com. (code review)
 - **Rate limits are per endpoint and daily**: `GET …/features` was locked ~23 h (Retry-After ≈ 84000 s) after an
   unthrottled scan of all documents; the eval endpoint showed ~30 remaining. Lesson: never bulk-scan. (observed)
 
@@ -100,10 +100,10 @@ four bosses as separate bodies (5 parts) — Onshape behaviour, reproduced local
 
 The server's own notice: **every tool call makes one or more Onshape REST calls on the user's allocation** (same
 pool as API keys / private OAuth apps). None of the 14 tools is documented as free; whether the doc search and
-notes tools really touch Onshape is unverified. Their calls go through OAuth, **not through fsgen's client, so
-they are missing from `.fsgen_api_ledger.jsonl` and `fsgen usage` undercounts** once the MCP server is used.
+notes tools really touch Onshape is unverified. Their calls go through OAuth, **not through ScriptForge's client, so
+they are missing from `.scriptforge_api_ledger.jsonl` and `scriptforge usage` undercounts** once the MCP server is used.
 
-| tool | writes to Onshape? | use for fsgen |
+| tool | writes to Onshape? | use for ScriptForge |
 |---|---|---|
 | `get_api_usage` | no | official used/limit/cycle → could replace the manual baseline in `.env` |
 | `whoami` | no | which account/allocation is billed |
@@ -111,7 +111,7 @@ they are missing from `.fsgen_api_ledger.jsonl` and `fsgen usage` undercounts** 
 | `search_featurescript_documentation` | no | look up std signatures (e.g. `opLoft` params) when writing prompts/paste export |
 | `read_/edit_featurescript_notes` | server-side notes, not documents | duplicate of FINDINGS.md; low value |
 | `list_feature_studios`, `get_featurescript` | no | read existing Feature Studios (e.g. the `test` document) |
-| `test_featurescript` | no (eval of a lambda) | same as fsgen's evalFeatureScript diagnostics |
+| `test_featurescript` | no (eval of a lambda) | same as ScriptForge's evalFeatureScript diagnostics |
 | `test_feature` | writes a Feature Studio + adds a trojan feature | compile-checks a whole Feature Studio, which the REST API otherwise hides |
 | `create_geometry` | new branched workspace (deleted by default) | builds a pasted custom feature for real; several calls |
 | `create_feature_studio`, `put_featurescript` | yes | automate the paste step (but costs calls, while pasting by hand is free) |
@@ -123,26 +123,26 @@ None of these builds native Sketch/Extrude trees, so the native pipeline is unch
 
 - The REST API has no endpoint for the user's API usage (checked in the public OpenAPI spec), so the official
   count is only available through the MCP tool `get_api_usage`.
-- MCP tools can only be called by Claude in a chat where the server is loaded; the fsgen Python pipeline can't
+- MCP tools can only be called by Claude in a chat where the server is loaded; the ScriptForge Python pipeline can't
   call them without its own Onshape OAuth login, and those calls would count too. So they are part of the
-  *working* routine (project `CLAUDE.md`), not of fsgen's code: `get_api_usage` → `fsgen usage --set-official N`
+  *working* routine (project `CLAUDE.md`), not of ScriptForge's code: `get_api_usage` → `scriptforge usage --set-official N`
   at session start, `search_featurescript_documentation` before changing generated FeatureScript.
 
 ## Dropbox (2026-10-01)
 
-- Tested: fsgen copies outputs (script, paste feature, local STEP/STL, render) to `Dropbox/fsgen/<part>/`;
+- Tested: ScriptForge copies outputs (script, paste feature, local STEP/STL, render) to `Dropbox/fsgen/<part>/` (now `Dropbox/scriptforge/`);
   the user pasted from `Dropbox/fsgen/paste-test/`.
 - Not tested: whether Onshape's Dropbox integration lists those files in the Import dialog (UI, free — user
   can check); exporting from Onshape straight to Dropbox via the API (`cloudStorageAccountId`, no endpoint
   found that returns the account id).
 - API-cost effect: none worth having. An API export to Dropbox would save at most the download call (~1 of ~4
   for STEP), while local STEP/STL cost 0 calls and match Onshape's volume. Dropbox is for convenience (files
-  on other devices / in Onshape's import dialog, input folder for `fsgen recognize`).
+  on other devices / in Onshape's import dialog, input folder for `scriptforge recognize`).
 
 ## Chat-driven workflow (2026-10-01)
 
 - The user prefers designing parts in a Claude Code chat over the unattended `generate` script. The chat
-  model writes `parts/<name>.fs` and uses fsgen as tools (`spec`, `studio build`, `paste`/`push`);
+  model writes `parts/<name>.fs` and uses ScriptForge as tools (`spec`, `studio build`, `paste`/`push`);
   `/make-part` (project command in `.claude/commands/`) and `CLAUDE.md` describe the loop. Same checks and
   costs as `generate`, but the user can steer between iterations.
 
@@ -206,7 +206,7 @@ None of these builds native Sketch/Extrude trees, so the native pipeline is unch
 - **Both review issues fixed by moving the snap socket into the handle**: the handle now prints standing on a
   flat back face (no pin, no flat overhang). The cap carries a split pin (1.2 mm slot, two halves flex) with a
   0.25 mm snap per side over a 4 mm lip; the socket chamber has a 45° ceiling.
-- **Fit checks without Onshape** (same method as the M12 test, `fsgen.fslite.geom` booleans on the local build):
+- **Fit checks without Onshape** (same method as the M12 test, `scriptforge.fslite.geom` booleans on the local build):
   nut moved along the right-handed thread has 0 overlap down to the cone contact; past contact the overlap
   lies only in the collet cone (z 88–95 mm, r ≤ 4.9), i.e. it clamps and the threads stay clear; blade and
   cap overlap 0. Paste feature = native build, also with changed blade diameter / clearance / grip length.
@@ -235,7 +235,7 @@ partial builds are listed in the review prompt ("NOT built locally … don't app
 told which features its delivery mode supports and paste mode rejects others right after the script check;
 a required `Assumptions:` section is saved to `assumptions.md` and logged; the background `claude -p` may use
 WebSearch/WebFetch (`--no-web` to turn off); 3D-printing rules in `rules.md`; output folder named from `--name`;
-LLM timeout `FSGEN_LLM_TIMEOUT` (default 30 min). The git repository now exists; commit before parallel work.
+LLM timeout `SCRIPTFORGE_LLM_TIMEOUT` (default 30 min). The git repository now exists; commit before parallel work.
 
 ## Confirmed in Onshape from the user's screenshots (2026-10-01)
 
@@ -248,8 +248,8 @@ LLM timeout `FSGEN_LLM_TIMEOUT` (default 30 min). The git repository now exists;
 
 ## Not tied to Claude (2026-10-01)
 
-- The fsgen tools are model-agnostic: the AI only writes the Part Studio script. Added a generic backend for
-  `fsgen generate` (`FSGEN_LLM_COMMAND`, prompt on stdin / answer on stdout: Ollama, Gemini CLI, `llm`, …),
+- The ScriptForge tools are model-agnostic: the AI only writes the Part Studio script. Added a generic backend for
+  `scriptforge generate` (`SCRIPTFORGE_LLM_COMMAND`, prompt on stdin / answer on stdout: Ollama, Gemini CLI, `llm`, …),
   tested with a stand-in CLI in `tests/test_generate_loop.py`, and `AGENTS.md` with the shared workflow for
   other coding assistants (Codex, Cursor, Copilot, Gemini CLI). Only Claude has actually been used so far.
 
@@ -266,11 +266,11 @@ LLM timeout `FSGEN_LLM_TIMEOUT` (default 30 min). The git repository now exists;
   for *My Account → Developer* has a "View your API usage" section with an *Annual API limits for* dropdown
   ([help page](https://cad.onshape.com/help/Content/Plans/my_account_developer.htm)); admins get e-mails at 25,
   50, 75 and 100 % of the limit. Browser use doesn't count, so this is a free way to read the official number
-  for `fsgen usage --set-official`. (help page; not yet checked in the UI)
+  for `scriptforge usage --set-official`. (help page; not yet checked in the UI)
 - A forum user reports an undocumented endpoint, `GET /api/v13/metrics/api/summary?startDate=…`, that returns
   usage for personal API keys when opened in a logged-in browser
   ([forum](https://forum.onshape.com/discussion/30053/viewing-personal-api-usage)). Not in the public OpenAPI
-  spec. Opened in the browser it should be free; called from fsgen with API keys it would itself count.
+  spec. Opened in the browser it should be free; called from ScriptForge with API keys it would itself count.
   (unverified)
 - If you belong to a company or classroom plan, usage is tracked at that level, and keys created under
   *My Account → Developer* may not appear in the company's usage table. (search summary of the help/forum;
@@ -283,12 +283,12 @@ LLM timeout `FSGEN_LLM_TIMEOUT` (default 30 min). The git repository now exists;
   and measure the overlap volume between them in the closed position, while turning the hinge in steps and over
   the last few degrees, and while sliding parts off. That caught a latch slot that had cut off its own hook (the
   local build was clean, but there was no snap at all). A snap shows as a small overlap (0.1–0.8 mm³) in the
-  last 2–4°; turning the wrong way shows as hundreds of mm³ at 90°. Now `fsgen studio fit` with a
+  last 2–4°; turning the wrong way shows as hundreds of mm³ at 90°. Now `scriptforge studio fit` with a
   `<script>.fit.toml` (bounding-box pre-check makes it ~7 s for a 7-part clamp; the scratch version took
   minutes). (tested)
 - Parts that print in different orientations (a flat shell and a former standing on its end) need a world map
   with the right handedness: if one half's own coordinates are the mirror image of the other's, its print-frame
-  map must have determinant −1, or the printed part is mirrored. `fsgen studio fit` rejects mirror placements.
+  map must have determinant −1, or the printed part is mirrored. `scriptforge studio fit` rejects mirror placements.
 - Local builder: an extrude's end face reuses the sketch's edges (same TShape), and entity equality compared only
   the shape, so `qContainsPoint(qEverything(EntityType.EDGE), …)` deduplicated the solid edge away in favour of the
   sketch edge and the chamfer got no edges. Entities now also compare the owning body (as in Onshape, where sketch
@@ -297,14 +297,14 @@ LLM timeout `FSGEN_LLM_TIMEOUT` (default 30 min). The git repository now exists;
   units) but built it on the same model scaled to millimeters. Fillets and chamfers now retry once at 1000× scale;
   the operation history is chained through both scale copies so later `qCreatedBy` queries still work. Onshape was
   not asked. (tested locally)
-- Print check (`fsgen studio check/build`): downward faces flatter than 45° that are not on the bed, per face with
+- Print check (`scriptforge studio check/build`): downward faces flatter than 45° that are not on the bed, per face with
   area, height and size. Exactly-45° chamfers need a 0.5° allowance or meshing noise flags them. (tested)
 - Artifacts (claude.ai pages) serve no binary files (`.stl` refused), so the 3D viewer embeds the meshes as base64
-  text. `fsgen studio view` writes a single self-contained HTML file. (tested)
+  text. `scriptforge studio view` writes a single self-contained HTML file. (tested)
 
 ## Feedback from an outside test (vertical-cloud-lab/powder-doser PR #178, 2026-10-10)
 
-A Claude agent in another project built a part with fsgen and reported what got in the way. Changes made:
+A Claude agent in another project built a part with ScriptForge and reported what got in the way. Changes made:
 
 - **Variables did not drive polylines, free lines or arcs.** Only rectangles, circles and explicit `dims` were
   dimensioned; other sketch entities were sent unconstrained, so a variable change in the Variable Studio did not
@@ -318,15 +318,15 @@ A Claude agent in another project built a part with fsgen and reported what got 
   sketches. 14 calls (5 features, Part Studio + Variable Studio 3, 2 volume checks, 2 status checks, 1 setVariables).
   Sketches on part faces: see the next section.
 - **Feature patterns of ADD extrudes failed** (`PATTERN_SWITCH_TO_PER_INSTANCE`) unless the script set
-  `fullFeaturePattern`. fsgen now sends `fullFeaturePattern: true` ("Reapply features") for FEATURE patterns by
+  `fullFeaturePattern`. ScriptForge now sends `fullFeaturePattern: true` ("Reapply features") for FEATURE patterns by
   default; an explicit `false` in the script wins. (tested on the fake server)
-- **Pushing into the user's own document**: `--document <Onshape URL>` (or `FSGEN_DOCUMENT`) on
-  `fsgen studio push` and `fsgen generate`. Studio state is now stored per workspace, so the same part name in two
+- **Pushing into the user's own document**: `--document <Onshape URL>` (or `SCRIPTFORGE_DOCUMENT`) on
+  `scriptforge studio push` and `scriptforge generate`. Studio state is now stored per workspace, so the same part name in two
   documents doesn't collide; old state files still work. Resolving a URL costs 0 calls (it is parsed, not
   looked up). (tested, `tests/test_document_target.py`)
 - A new document comes with an empty "Part Studio 1". Reusing it would save one call but means renaming it
-  (1 call) and guessing which tab is meant; deleting it in the UI is free, so fsgen leaves it.
-- When fsgen is worth its calls: importing a STEP costs fewer calls if you only want to look at the part.
+  (1 call) and guessing which tab is meant; deleting it in the UI is free, so ScriptForge leaves it.
+- When ScriptForge is worth its calls: importing a STEP costs fewer calls if you only want to look at the part.
   The native tree pays off once someone edits or iterates (a variable change is 0 calls in the UI, a re-push
   1 call per changed feature).
 
@@ -339,7 +339,7 @@ A Claude agent in another project built a part with fsgen and reported what got 
 - But a sketch on that face (`BTMSketch`, read back with `evOwnerSketchPlane`) has its **origin at the world origin
   projected onto the face** and evPlane's x-axis. The first try converted with evPlane's origin: the slot landed
   half off the block and the side hole cut nothing (INFO); volumes were off by exactly those amounts. (1 call)
-- fsgen now defines face sketch coordinates as: projected world origin, x = the parallel default plane's x,
+- ScriptForge now defines face sketch coordinates as: projected world origin, x = the parallel default plane's x,
   y = normal × x. The push measures the face's x-axis with evPlane (1 call per face sketch it sends, with
   `rollbackBarIndex` when later features exist, so the face is seen as it is at the sketch's position: worked) and
   turns the sketch; every vertex gets distances to the projected Origin. Dimensioned face sketches count as driven,
@@ -356,15 +356,15 @@ A Claude agent in another project built a part with fsgen and reported what got 
   `qFarthestAlong` is ambiguous for this: side faces reach the same height as the top face (locally it returned 5).
 - Calls: 34 (probe 1, push + variable test 22, sketch-plane probe 1, re-send of the face sketches 8, last variable
   test 2).
-- Official usage (MCP `get_api_usage`) was 1166 when fsgen's ledger said 741: about 425 calls came from outside
-  fsgen (the MCP server, other sessions or apps). Recalibrated with `fsgen usage --set-official 1166`. Two MCP doc
+- Official usage (MCP `get_api_usage`) was 1166 when ScriptForge's ledger said 741: about 425 calls came from outside
+  ScriptForge (the MCP server, other sessions or apps). Recalibrated with `scriptforge usage --set-official 1166`. Two MCP doc
   searches followed; whether they counted was not measured.
 
 ## 2026-10-14: geometry check, wall check, per-part/3MF export (measured locally, 0 calls)
 
 - Wall check = numpy Moller-Trumbore ray casting against the part's own mesh (0.05 mm deflection), from up to 4000
   area-weighted random surface points along the inward normal. Chosen over OCP `IntCurvesFace_ShapeIntersector`
-  because one batched numpy pass beats thousands of per-ray Python calls. Timings (whole `fsgen` check, per part):
+  because one batched numpy pass beats thousands of per-ray Python calls. Timings (whole `scriptforge` check, per part):
   lidded box 0.04 s, plate 0.23 s, l_bracket 0.1 s, flange 0.6 s, enclosure (36 faces) 0.6 s, M12 bolt (threads)
   1.6 s. Cost grows with samples x triangles; chunks of 64 rays.
 - False positives near edges: a normal ray from a fillet, chamfer or sharp edge leaves the solid at a grazing angle
@@ -385,7 +385,7 @@ A Claude agent in another project built a part with fsgen and reported what got 
 ## 2026-10-14: first push from a free Onshape plan (73 calls)
 
 - `POST documents` with `isPublic: false` -> 409 "Free accounts only allow access to public documents". The 4xx is
-  free. Added `--public` / `FSGEN_PUBLIC=1`; the default stays private.
+  free. Added `--public` / `SCRIPTFORGE_PUBLIC=1`; the default stays private.
 - `cPlane` with `"offset" : -2.65 mm` -> 400 "Parameter offset in feature ... of type Plane does not match its feature
   spec". Onshape wants a positive offset and `"oppositeDirection" : true`; the local builder had accepted the negative
   value. The push stopped at feature 16 of 60 (24 calls); the rerun reused those 16.

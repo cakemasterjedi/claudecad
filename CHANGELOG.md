@@ -2,8 +2,17 @@
 
 ## Unreleased
 
+### Changed
+
+- **Project renamed to ScriptForge** (was `fsgen`): Python package `scriptforge`, CLI `scriptforge` (`fsgen` stays as an
+  alias), environment variables `SCRIPTFORGE_*` with the old `FSGEN_*` names as fallback, state files
+  (`.fsgen_api_ledger.jsonl`, `.fsgen_workspace.json`, `.fsgen_native.json`) are renamed to `.scriptforge_*` automatically
+  on first use, and the web login cookie was renamed, so users sign in again once. Saved web preferences are kept.
+
 ### Added
 
+- **`scriptforge web` Download STL**: download the STL the local build already made (`?what=stl`), with no
+  Onshape push and 0 Onshape calls.
 - **`fsgen web` Change it**: describe a change to a generated part; the result is saved as `<name>-rev.fs` and the
   original script is kept (the result shows a "Revision of" note).
 - **`fsgen web` Keep this one** (A/B runs): asks before deleting the other script, then renames the winner to the

@@ -1,4 +1,6 @@
-# onshape-fsgen
+# ScriptForge CAD
+
+*ScriptForge is this CAD project (it has nothing to do with LibreOffice's "ScriptForge" library). It is a fork of [Lucasfrit/onshape-fsgen](https://github.com/Lucasfrit/onshape-fsgen), renamed from `fsgen`: the old `fsgen` command, `FSGEN_*` environment variables and saved state files keep working.*
 
 **Describe a part in words and get a real Onshape part: sketches, extrudes and fillets in the feature tree,
 exactly as if you had modelled it yourself, and every one of them editable afterwards.**
@@ -9,7 +11,7 @@ exactly as if you had modelled it yourself, and every one of them editable after
   <img src="docs/images/fan_adapter_build.gif" width="760" alt="Fan adapter in Onshape, stepped through its feature tree with the rollback bar">
 </p>
 <p align="center"><em>A fan adapter generated from a short written description, shown in Onshape by moving the
-rollback bar down its feature tree. Nothing is imported geometry; fsgen created every variable, sketch and
+rollback bar down its feature tree. Nothing is imported geometry; ScriptForge created every variable, sketch and
 feature through the Onshape API.</em></p>
 
 **See for yourself:** the example parts are in a [public Onshape document](https://cad.onshape.com/documents/1fb090da32717a692a4130a3/w/dd197b61b6df7a8ada3240df/e/1bf2dc907f8a5ed598df9b97): open it with any Onshape
@@ -19,7 +21,7 @@ in [examples/prompts.md](examples/prompts.md).
 ## What makes it different
 
 LLM-generated 3D models are easy to find, but they arrive as a mesh, a STEP file or one opaque block of code:
-geometry you can look at but not really edit. fsgen builds the part **the way a person would in Onshape**:
+geometry you can look at but not really edit. ScriptForge builds the part **the way a person would in Onshape**:
 
 - **Variables** for every key dimension, either in a Variable Studio (default, shown below) or at the top of the
   tree (`#slotLength = 40 mm`, `#boltCount = 6`), edited like any Onshape variable.
@@ -29,7 +31,7 @@ geometry you can look at but not really edit. fsgen builds the part **the way a 
 - **Standard features**: Extrude (new / add / remove), Revolve, Loft, Sweep along a helix (threads), Fillet,
   Chamfer, Shell, Plane, Linear / Circular / Mirror patterns, Boolean… with readable names ("Base plate",
   "Vent slot pattern", "Inside fillet").
-- **Edit anything afterwards** in Onshape, by hand, or by changing the script and pushing again; fsgen then
+- **Edit anything afterwards** in Onshape, by hand, or by changing the script and pushing again; ScriptForge then
   updates only the features that changed.
 
 All 98 Onshape standard features can be used; parameters are checked against Onshape's own feature
@@ -39,7 +41,7 @@ definitions before anything is sent.
 <em>The pillow block's variables in its Variable Studio: change a value and the part updates.</em></p>
 
 <details>
-<summary><b>More parts built with fsgen</b> (pillow block, NEMA 17 motor mount, enclosure, flange)</summary>
+<summary><b>More parts built with ScriptForge</b> (pillow block, NEMA 17 motor mount, enclosure, flange)</summary>
 <br>
 <p align="center">
   <img src="docs/images/tree_pillow_block.png" width="380" alt="Pillow block feature tree">
@@ -53,7 +55,7 @@ definitions before anything is sent.
 NEMA 17 mount, generated from a description (23 features including its 12 variables;
 slots, mirrored screw holes, inside fillet) · enclosure (shell, rounded corners, bosses on an offset plane, cable
 hole) and flange (revolve, bolt-hole circular pattern, chamfer): hand-written reference scripts that serve as the
-AI's examples, built in Onshape by fsgen</em></p>
+AI's examples, built in Onshape by ScriptForge</em></p>
 </details>
 
 ## How it works
@@ -71,7 +73,7 @@ AI's examples, built in Onshape by fsgen</em></p>
 
 The local test build is a supporting tool, not the point: an OpenCascade engine that reproduces Onshape's
 feature behaviour, so mistakes are caught and fixed before they cost API calls, and the result can be checked
-(sizes, holes, volume, a preview image). Onshape's education plans allow 2,500 API calls per year, so fsgen
+(sizes, holes, volume, a preview image). Onshape's education plans allow 2,500 API calls per year, so ScriptForge
 shows the cost before each push (the example parts: 11–19 calls each) and re-sends only what changed.
 
 If you don't need to edit the sketches later, there is a **0-call alternative**: the same part as one
@@ -90,11 +92,11 @@ snap-on end cap (local preview; the fit of the thread was checked locally). Scri
 
 Onshape's [FeatureScript MCP server](https://www.onshape.com/en/blog/get-started-featurescript-mcp-server)
 has an AI write custom features, typically tools with their own dialog that work on geometry you select.
-fsgen's paste option also produces a custom feature, but one that builds a whole part from its parameters
+ScriptForge's paste option also produces a custom feature, but one that builds a whole part from its parameters
 (lengths, angles, counts), checked locally and with no API calls. Its main output, a native feature tree, is
 something the MCP server doesn't make. Community MCP servers (e.g.
 [onshape-mcp](https://github.com/hedless/onshape-mcp)) do create native features, one tool call at a time,
-checking each one in Onshape, so every attempt and correction costs API calls. fsgen writes the whole part
+checking each one in Onshape, so every attempt and correction costs API calls. ScriptForge writes the whole part
 first, checks and builds it locally, and then pushes it with a known number of calls. The limit of this
 approach: features the local builder can't build yet are only checked against Onshape's feature definitions
 offline; their geometry is checked in Onshape after the push (see [What it can build today](#what-it-can-build-today)).
@@ -123,8 +125,8 @@ Other assistants (Codex, Cursor, Copilot, Gemini CLI, …) read the same workflo
 **Or with one command:**
 
 ```bash
-.venv/bin/fsgen generate "…description…" --paste --name "My part"      # 0 API calls → paste_feature.fs
-.venv/bin/fsgen generate "…description…" --name "My part" --budget 40  # native feature tree in Onshape
+.venv/bin/scriptforge generate "…description…" --paste --name "My part"      # 0 API calls → paste_feature.fs
+.venv/bin/scriptforge generate "…description…" --name "My part" --budget 40  # native feature tree in Onshape
 ```
 
 To paste: create a Feature Studio in Onshape, paste the file, and insert the feature in a Part Studio.
@@ -132,24 +134,26 @@ To paste: create a Feature Studio in Onshape, paste the file, and insert the fea
 ## Web UI
 
 ```bash
-.venv/bin/fsgen web                      # http://127.0.0.1:8770/ plus the LAN URLs it prints
-.venv/bin/fsgen web --port 8771 --password secret --root path/to/project
+.venv/bin/scriptforge web                      # http://127.0.0.1:8770/ plus the LAN URLs it prints
+.venv/bin/scriptforge web --port 8771 --password secret --root path/to/project
 ```
 
-Set a saved password with `fsgen web --set-password` (prompts, stores it in `.env`). The password is `--password`, else `$FSGEN_WEB_PASSWORD` (also read from `.env`), else a random one printed once at start. Open the LAN
+Settings come from `SCRIPTFORGE_*` environment variables (or `.env`); the older `FSGEN_*` names still work, and `SCRIPTFORGE_*` wins when both are set.
+
+Set a saved password with `scriptforge web --set-password` (prompts, stores it in `.env`). The password is `--password`, else `$SCRIPTFORGE_WEB_PASSWORD` (also read from `.env`), else a random one printed once at start. Open the LAN
 URL on your phone. **It is plain HTTP**: anyone on the network can see the traffic, so use it only on a trusted
 network. Failed logins are rate limited. It serves the `.fs` files under `--root` (default: the current folder).
 
-- **Parts**: open, edit and save scripts; *Save & check* runs the same check as `fsgen studio check` (0 Onshape
+- **Parts**: open, edit and save scripts; *Save & check* runs the same check as `scriptforge studio check` (0 Onshape
   calls, in a separate process with a 60 s limit) and shows the report, geometry and wall checks and a 3D preview
   (As printed, plus Assembled when a fit file is next to the script). The 3D view loads three.js from a CDN, so the
   phone needs internet.
-- **Generate**: describe a part; Claude writes the script and fsgen checks and reviews it locally (paste mode, 0
+- **Generate**: describe a part; Claude writes the script and ScriptForge checks and reviews it locally (paste mode, 0
   Onshape calls). One job at a time; the log streams live and you can reconnect. The script is saved as
   `<name>.fs` in the root (never overwritten), working files in `out/web/`.
 - **Photos** (Generate tab): upload up to 4 photos or dimensioned sketches of the part (jpeg/png/webp, 3 MB each).
   *Read measurements* extracts the dimensions into the request box, locally with Ollama when the configured model is
-  installed (`OLLAMA_HOST`, `FSGEN_OLLAMA_MODEL`), else with Claude; the photos are also sent to the generate
+  installed (`OLLAMA_HOST`, `SCRIPTFORGE_OLLAMA_MODEL`), else with Claude; the photos are also sent to the generate
   stage. The *Force local model* option on the Generate tab picks an installed Ollama model and uses it for both
   *Read measurements* and Generate (no Claude calls, no web search). API: `POST /api/uploads {filename,
   data(base64)}` -> `{id, type}`; `GET /api/llm`; `POST /api/measure {images, note?, backend?, model?}` ->
@@ -157,19 +161,19 @@ network. Failed logins are rate limited. It serves the `.fs` files under `--root
   After a generation the result card shows a 3D preview and the buttons Download .fs, Download all (.zip), Push to
   Onshape and Download + push (`GET /api/generate/{id}/download|estimate`, `POST /api/generate/{id}/push`; the push
   asks for confirmation with the estimate first).
-- **Usage**: the same numbers as `fsgen usage` (read-only).
+- **Usage**: the same numbers as `scriptforge usage` (read-only).
 
 ## Which AI?
 
-fsgen is not tied to one model: the AI only has to write a text file (the Part Studio script); checking,
-building and talking to Onshape is done by fsgen.
+ScriptForge is not tied to one model: the AI only has to write a text file (the Part Studio script); checking,
+building and talking to Onshape is done by scriptforge.
 
 | how you work | AI | setup |
 |---|---|---|
-| chat with a coding assistant | Claude Code (`/make-part`), Codex, Cursor, Copilot, Gemini CLI, … | none: they follow [AGENTS.md](AGENTS.md) and run `fsgen spec` / `fsgen studio build` / `paste` / `push` |
-| one command, `fsgen generate` | Claude (default) | logged-in `claude` CLI, or `ANTHROPIC_API_KEY` |
-| one command, `fsgen generate` | any LLM with a command-line tool: local models via Ollama, Gemini CLI, `llm`, … | `FSGEN_LLM_COMMAND="ollama run qwen2.5-coder:32b"` (prompt on stdin, answer on stdout) |
-| by hand | you | write the script yourself; `fsgen studio build` checks it |
+| chat with a coding assistant | Claude Code (`/make-part`), Codex, Cursor, Copilot, Gemini CLI, … | none: they follow [AGENTS.md](AGENTS.md) and run `scriptforge spec` / `scriptforge studio build` / `paste` / `push` |
+| one command, `scriptforge generate` | Claude (default) | logged-in `claude` CLI, or `ANTHROPIC_API_KEY` |
+| one command, `scriptforge generate` | any LLM with a command-line tool: local models via Ollama, Gemini CLI, `llm`, … | `SCRIPTFORGE_LLM_COMMAND="ollama run qwen2.5-coder:32b"` (prompt on stdin, answer on stdout) |
+| by hand | you | write the script yourself; `scriptforge studio build` checks it |
 
 So far it has been used and tested with Claude; other models should work through the same interface, but how
 well they write FeatureScript is untested. Results improve with models that can read the preview image and
@@ -196,23 +200,23 @@ chamfer · shell · booleans · linear / circular / mirror feature patterns (inc
 helix + sweep (threads). Not yet: draft, sheet metal, surfaces. Full table:
 [docs/CAPABILITIES.md](docs/CAPABILITIES.md).
 
-Also: **STEP → editable tree** (`fsgen recognize part.step`) using
+Also: **STEP → editable tree** (`scriptforge recognize part.step`) using
 [featuretree](https://github.com/punkfab/featuretree)'s feature recognition, for prismatic parts.
 
 ## Main commands
 
 | command | what it does | Onshape calls |
 |---|---|---|
-| `fsgen generate "…" [--paste] [--llm-command "…"]` | prompt → script → local build/review → paste file or native tree | 0 / ≈ features + 5 |
-| `fsgen studio build file.fs` | local build: STEP, STL, preview, print check, cost estimate | 0 |
-| `fsgen studio fit file.fs` | parts in their assembled position: overlaps, hinge/slide motions, snap fits | 0 |
-| `fsgen studio view file.fs` | interactive 3D viewer (HTML): print layout and assembly | 0 |
-| `fsgen studio paste file.fs` | custom feature to paste (clipboard) | 0 |
-| `fsgen studio push file.fs [--document URL]` | create / update the native tree incrementally | as estimated |
-| `fsgen emboss art.svg file.fs [--plane top --offset MM --cylinder R]` | put flat-color SVG art on a script as raised multicolor bodies (`<file>_emboss.fs`) | 0 |
-| `fsgen recognize part.step` | STEP → editable Part Studio script | 0 |
-| `fsgen features [type]` | feature catalog / one feature's parameters | 0 |
-| `fsgen usage` | API calls used and left | 0 |
+| `scriptforge generate "…" [--paste] [--llm-command "…"]` | prompt → script → local build/review → paste file or native tree | 0 / ≈ features + 5 |
+| `scriptforge studio build file.fs` | local build: STEP, STL, preview, print check, cost estimate | 0 |
+| `scriptforge studio fit file.fs` | parts in their assembled position: overlaps, hinge/slide motions, snap fits | 0 |
+| `scriptforge studio view file.fs` | interactive 3D viewer (HTML): print layout and assembly | 0 |
+| `scriptforge studio paste file.fs` | custom feature to paste (clipboard) | 0 |
+| `scriptforge studio push file.fs [--document URL]` | create / update the native tree incrementally | as estimated |
+| `scriptforge emboss art.svg file.fs [--plane top --offset MM --cylinder R]` | put flat-color SVG art on a script as raised multicolor bodies (`<file>_emboss.fs`) | 0 |
+| `scriptforge recognize part.step` | STEP → editable Part Studio script | 0 |
+| `scriptforge features [type]` | feature catalog / one feature's parameters | 0 |
+| `scriptforge usage` | API calls used and left | 0 |
 
 All commands and options: [docs/REFERENCE.md](docs/REFERENCE.md).
 
@@ -229,7 +233,7 @@ Full list: [CHANGELOG.md](CHANGELOG.md).
 
 - [docs/CAPABILITIES.md](docs/CAPABILITIES.md): what runs locally vs. in Onshape, feature table, local builder.
 - [docs/FINDINGS.md](docs/FINDINGS.md): Onshape API and FeatureScript behaviours discovered along the way
-  (undocumented quirks, call accounting, what costs what). Useful even if you don't use fsgen.
+  (undocumented quirks, call accounting, what costs what). Useful even if you don't use scriptforge.
 - [docs/REFERENCE.md](docs/REFERENCE.md): commands, the script dialect, rules, adding features.
 - [rules.md](rules.md): the modelling rules the LLM follows (edit to taste).
 - [CHANGELOG.md](CHANGELOG.md): what changed in each version.
@@ -246,6 +250,7 @@ Not affiliated with Onshape or PTC.
 
 ## Credits and license
 
+- Fork of [Lucasfrit/onshape-fsgen](https://github.com/Lucasfrit/onshape-fsgen) (MIT).
 - STEP feature recognition: [featuretree](https://github.com/punkfab/featuretree) (MIT), vendored in
   `third_party/featuretree` with its license.
 - Geometry: [build123d](https://github.com/gumyr/build123d) / OpenCascade (OCP).
