@@ -175,7 +175,7 @@ class LocalBuilder:
             return
         if op == "ADD":
             shape, hist = G.fuse_all([b.shape for b in scope] + [tool])
-            new = [Body(s, scope[0].creator) for s in G.solids_of(shape)]
+            new = [Body(s, scope[0].creator, name=scope[0].name, color=scope[0].color) for s in G.solids_of(shape)]
             self.ctx.commit(oid, hist, new_bodies=new, removed_bodies=scope)
             return
         kind = {"REMOVE": "SUBTRACTION", "INTERSECT": "INTERSECTION"}[op]
@@ -184,7 +184,7 @@ class LocalBuilder:
         for b in scope:
             shape, h = G.boolean(kind, [b.shape], [tool])
             hists.append(h)
-            new += [Body(s, b.creator) for s in G.solids_of(shape)]
+            new += [Body(s, b.creator, name=b.name, color=b.color) for s in G.solids_of(shape)]
         from ..fslite.stdlib import _MultiHistory
         self.ctx.commit(oid, _MultiHistory(hists), new_bodies=new, removed_bodies=scope)
         after = sum(G.props(b.shape, "volume").Mass() for b in new)
@@ -394,7 +394,7 @@ class LocalBuilder:
                 raise KernelFailure(f"{e} [{len(items)} edge(s)/face(s) on one part]")
             hists.append(h)
             removed.append(body)
-            new += [Body(s, body.creator) for s in G.solids_of(shape)]
+            new += [Body(s, body.creator, name=body.name, color=body.color) for s in G.solids_of(shape)]
         self.ctx.commit(oid, _MultiHistory(hists), new_bodies=new, removed_bodies=removed)
 
     def f_fillet(self, rec):
@@ -513,7 +513,7 @@ class LocalBuilder:
         oid = Id((rec.name,))
         if op == "UNION":
             shape, h = G.fuse_all([b.shape for b in tools])
-            self.ctx.commit(oid, h, new_bodies=[Body(s, tools[0].creator) for s in G.solids_of(shape)],
+            self.ctx.commit(oid, h, new_bodies=[Body(s, tools[0].creator, name=tools[0].name, color=tools[0].color) for s in G.solids_of(shape)],
                             removed_bodies=tools)
             return
         targets = self.bodies(p.get("targets"), f"boolean \"{rec.name}\" targets")
@@ -523,7 +523,7 @@ class LocalBuilder:
         for t in targets:
             shape, h = G.boolean(kind, [t.shape], [b.shape for b in tools])
             hists.append(h)
-            new += [Body(s, t.creator) for s in G.solids_of(shape)]
+            new += [Body(s, t.creator, name=t.name, color=t.color) for s in G.solids_of(shape)]
         removed = targets + ([] if p.get("keepTools") else tools)
         self.ctx.commit(oid, _MultiHistory(hists), new_bodies=new, removed_bodies=removed)
 
@@ -535,7 +535,26 @@ class LocalBuilder:
     def build(self, tr: TraceResult) -> LocalResult:
         t0 = time.time()
         res = LocalResult(False)
-        for rec in tr.features:
+        from ..fslite.stdlib import set_property
+        pending = list(tr.properties)
+
+        def apply_properties(upto):
+            """Apply setProperty calls made before feature `upto`; returns an error message or None."""
+            while pending and pending[0][0] <= upto:
+                _, qt, ptype, value, line = pending.pop(0)
+                try:
+                    bodies = self.bodies(qt, "setProperty entities", required=False)
+                    if not bodies:
+                        self.warnings.append(f"setProperty {ptype} (script line {line}): query selects no parts")
+                    set_property(self.ctx, bodies, ptype, value, self.warnings)
+                except FSError as e:
+                    return f"setProperty (script line {line}): {e.msg}"
+            return None
+
+        for i, rec in enumerate(tr.features):
+            if (perr := apply_properties(i)):
+                res.error = perr
+                break
             fn = getattr(self, f"f_{rec.feature_type}", None)
             if fn is None:
                 self.partial = True
@@ -557,7 +576,8 @@ class LocalBuilder:
                 self.warnings.append(f"\"{rec.name}\" ({rec.feature_type}): local kernel error {type(e).__name__}: "
                                      f"{e}; skipped locally")
         else:
-            res.ok = True
+            res.error = apply_properties(len(tr.features) + 1)
+            res.ok = res.error is None
         res.run = RunResult(ok=True, context=self.ctx, output=list(self.ctx.log))
         res.warnings, res.partial = self.warnings, self.partial
         res.seconds = time.time() - t0

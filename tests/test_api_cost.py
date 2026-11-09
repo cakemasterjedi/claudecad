@@ -109,3 +109,29 @@ def test_set_official_resets_baseline(tmp_path, monkeypatch):
     usage.set_official(800, str(env))
     assert "ONSHAPE_API_BASELINE=800" in env.read_text()
     assert usage.allocation_status().used == 800  # older ledger entries are already in the official number
+
+
+MULTICOLOR = (Path(__file__).resolve().parent.parent / "examples" / "native" / "multicolor_tag.fs").read_text()
+
+
+def test_multicolor_push_warns_and_costs_the_same(monkeypatch):
+    from fsgen import cloud
+    from fsgen.native import pushflow
+    from fsgen.usage import PROPERTIES_NOT_PUSHED, estimate_push
+
+    tr = trace(MULTICOLOR)
+    assert tr.properties
+    assert estimate_push(tr, None).warnings == [PROPERTIES_NOT_PUSHED]
+    assert estimate_push(trace(PLATE), None).warnings == []
+    plain = trace(MULTICOLOR.replace("setProperty", "// setProperty"))
+    assert estimate_push(tr, None).total == estimate_push(plain, None).total
+    calls_plain, _, _ = push(MULTICOLOR.replace("setProperty", "// setProperty"))
+    calls, _, r = push(MULTICOLOR)
+    assert r.ok and calls == calls_plain
+    monkeypatch.setattr(cloud, "target_workspace", lambda o, document, public=None: {"did": "a" * 24, "wid": "b" * 24})
+    with fake_onshape():
+        r, _ = pushflow.push(Onshape(), tr, "T", MULTICOLOR, "x.fs", fresh=True)
+    assert r.ok and PROPERTIES_NOT_PUSHED in r.warnings
+    with fake_onshape():
+        r, _ = pushflow.push(Onshape(), trace(PLATE), "T2", PLATE, "x.fs", fresh=True)
+    assert PROPERTIES_NOT_PUSHED not in r.warnings

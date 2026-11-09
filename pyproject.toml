@@ -3,7 +3,7 @@ name = "fsgen"
 version = "0.2.0"
 description = "Prompt -> Onshape FeatureScript -> local OpenCascade preview and Onshape export"
 requires-python = ">=3.11,<3.15"
-dependencies = ["build123d>=0.9", "requests", "python-dotenv", "anthropic", "matplotlib", "numpy"]
+dependencies = ["build123d>=0.9", "requests", "python-dotenv", "anthropic", "matplotlib", "numpy", "shapely>=2.0", "svgelements>=1.9"]
 
 [project.scripts]
 fsgen = "fsgen.cli:main"

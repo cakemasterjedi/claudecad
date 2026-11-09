@@ -96,6 +96,40 @@ def extract_script(text: str) -> str | None:
     return blocks[-1].strip() + "\n" if blocks else None
 
 
+_QUESTIONS_HEAD = re.compile(r"^[ \t>#*]*Questions:?\**[ \t]*\n(.*)", re.S | re.M | re.I)
+
+
+def split_questions(text: str) -> tuple[str, list[dict]]:
+    """(text without the `Questions:` section, parsed questions); no section -> (text, [])."""
+    m = _QUESTIONS_HEAD.search(text)
+    qs = extract_questions(text) if m else []
+    return (text[:m.start()].strip(), qs) if qs else (text, [])
+
+
+def extract_questions(text: str) -> list[dict]:
+    """Parse a `Questions:` section into [{"text", "options", "compare"}] (max 4); a trailing `[compare]` marks a
+    question whose options are worth building both of (versions A and B)."""
+    m = _QUESTIONS_HEAD.search(text)
+    if not m:
+        return []
+    out = []
+    for line in m.group(1).splitlines():
+        q = re.match(r"\s*(?:\d+[.)])\s+(.*\S)", line)
+        if not q:
+            continue
+        body, options = q.group(1).strip(), []
+        compare = bool(re.search(r"\s*\[compare\]\s*$", body, re.I))
+        body = re.sub(r"\s*\[compare\]\s*$", "", body, flags=re.I)
+        om = re.search(r"\bOptions:\**\s*(.+)$", body)
+        if om:
+            options = [o.strip().strip("*_ ") for o in om.group(1).split("|") if o.strip().strip("*_ ")]
+            body = body[:om.start()].rstrip(" *_").strip()
+        out.append({"text": body, "options": options, "compare": compare and len(options) >= 2})
+        if len(out) == 4:
+            break
+    return out
+
+
 def studio_name(request: str) -> str:
     words = re.sub(r"[^A-Za-z0-9 ]+", " ", request).split()
     return " ".join(words[:5])[:40] or "Generated part"
@@ -126,7 +160,7 @@ def mode_note(paste: bool) -> str:
     if paste:
         return ("Delivery: this part is delivered as a pasted custom feature (paste mode). Use ONLY these standard "
                 f"features (the others cannot be pasted): {', '.join(sorted(pasteable - {'newSketch'}))}, plus "
-                "newSketch and variable().")
+                "newSketch, variable() and setProperty() (part names/colors for multicolor parts).")
     return ("Delivery: native feature tree in Onshape. Prefer these features, which can be checked locally before "
             f"anything is sent: {', '.join(sorted(local - {'newSketch'}))}. Other standard features are allowed when "
             "the design needs them, but they can only be checked in Onshape.")
@@ -154,27 +188,51 @@ def generate_native(request: str, out_dir: Path | None = None, name: str | None 
                     model: str | None = None, max_fixes: int = 5, review_rounds: int = 2,
                     export_formats: tuple = (), budget: int | None = None, paste: bool = False,
                     web: bool = True, llm_command: str | None = None, document: str | None = None,
-                    on_log: Callable[[str], None] | None = None, images: Sequence[Path] = ()) -> dict:
-    """`on_log(msg)` receives every progress line (default: print with the "[fsgen] " prefix); it is per run, so
+                    on_log: Callable[[str], None] | None = None, images: Sequence[Path] = (), ask: bool = False,
+                    variant_note: str | None = None, edit: tuple[str, str, str | None] | None = None) -> dict:
+    """`edit` = (code, change, original_request) starts from an existing script instead of drafting one (see
+    `revise_native`).
+    `on_log(msg)` receives every progress line (default: print with the "[fsgen] " prefix); it is per run, so
     several runs in different threads keep separate logs."""
     run = _Run(on_log)
     token = _RUN.set(run)
     try:
         return _generate_native(run, request, out_dir, name, backend, model, max_fixes, review_rounds,
-                                export_formats, budget, paste, web, llm_command, document, tuple(images))
+                                export_formats, budget, paste, web, llm_command, document, tuple(images), ask,
+                                variant_note, edit)
     finally:
         if run.heartbeat is not None:
             run.heartbeat.stop()
         _RUN.reset(token)
 
 
+def revise_native(code: str, change: str, out_dir: Path | None = None, *, original_request: str | None = None,
+                  name: str | None = None, backend: str = "auto", model: str | None = None, max_fixes: int = 5,
+                  review_rounds: int = 2, export_formats: tuple = (), budget: int | None = None, paste: bool = False,
+                  web: bool = True, llm_command: str | None = None, document: str | None = None,
+                  on_log: Callable[[str], None] | None = None, images: Sequence[Path] = ()) -> dict:
+    """Apply `change` to the working script `code`, then run the same verify pipeline as `generate_native`
+    (trace, feature check, local build, review, paste export, fix loop). Use a new `out_dir` per revision."""
+    return generate_native(change, out_dir, name=name, backend=backend, model=model, max_fixes=max_fixes,
+                           review_rounds=review_rounds, export_formats=export_formats, budget=budget, paste=paste,
+                           web=web, llm_command=llm_command, document=document, on_log=on_log, images=images,
+                           edit=(code, change, original_request))
+
+
 def _generate_native(run, request, out_dir, name, backend, model, max_fixes, review_rounds, export_formats, budget,
-                     paste, web, llm_command, document, images=()) -> dict:
+                     paste, web, llm_command, document, images=(), ask_questions=False, variant_note=None,
+                     edit=None) -> dict:
     llm = make_llm(backend, model, web=web, command=llm_command)
     label = re.sub(r"[^a-z0-9]+", "-", (name or studio_name(request)).lower()).strip("-") or "part"
     out_dir = out_dir or Path("out") / "native" / f"{time.strftime('%Y%m%d-%H%M%S')}-{label}"
     out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / "request.txt").write_text(request)
+    if edit:  # later prompts (repair, review) judge against the original request plus the change
+        change = request
+        original = edit[2]
+        request = f"{original.strip()}\n\nChange requested afterwards: {change}" if original and original.strip() else change
+        (out_dir / "request.txt").write_text(f"Change: {change}\n\nOriginal request: {original or '(not available)'}\n")
+    else:
+        (out_dir / "request.txt").write_text(request)
     system = prompts.system_prompt()
     try:
         o = Onshape(budget=budget, purpose=f"generate: {request[:60]}")
@@ -212,7 +270,20 @@ def _generate_native(run, request, out_dir, name, backend, model, max_fixes, rev
 
     if images:
         log(f"reference images: {len(images)}")
-    text, code = ask("generate", prompts.generate_prompt(request, mode_note(paste), bool(images)), images=images)
+    if edit:
+        ask_questions = False
+        text, code = ask("generate", prompts.edit_prompt(edit[0], edit[1], edit[2]), images=images)
+    else:
+        text, code = ask("generate", prompts.generate_prompt(request, mode_note(paste), bool(images), ask=ask_questions,
+                                                             variant_note=variant_note), images=images)
+    questions = extract_questions(text) if ask_questions and code is None else []
+    if questions:
+        (out_dir / "questions.json").write_text(json.dumps(questions, indent=2))
+        log(f"the model asked {len(questions)} clarifying question(s); answer them and run again")
+        result = {"ok": False, "studio": name or studio_name(request), "error": None, "questions": questions,
+                  "history": history, "api_calls": o.calls, "api_calls_by_endpoint": o.by_endpoint}
+        (out_dir / "result.json").write_text(json.dumps(result, indent=2, default=str))
+        return result
     assumptions = extract_assumptions(text)
     if assumptions:
         (out_dir / "assumptions.md").write_text(f"# Assumptions for: {request}\n\n{assumptions}\n")
@@ -221,7 +292,7 @@ def _generate_native(run, request, out_dir, name, backend, model, max_fixes, rev
         log("warning: the design states no assumptions")
     fixes, reviews = 0, 0
     previous_review = None
-    result = {"ok": False, "studio": name or studio_name(request)}
+    result = {"ok": False, "studio": name or studio_name(request), "questions": []}
     while code is not None:
         (out_dir / "part_studio.fs").write_text(code)
         stage("checking the script")

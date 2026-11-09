@@ -327,3 +327,130 @@ def test_push_success_over_budget_keys_and_lock(web, monkeypatch):
     monkeypatch.setattr("fsgen.usage.load_dotenv", lambda *a, **k: None)  # do not re-read the repo .env
     s, d = call(web, "POST", f"/api/generate/{jid}/push")
     assert s == 400 and "keys" in d["error"]
+
+
+# --- questions and variants
+
+QUESTIONS = "Questions:\n1. Which style? Options: classic | modern\n2. Which size?\n"
+
+
+class AskLLM(FakeLLM):
+    """Replies with questions when the prompt carries the ask note and no answers yet."""
+
+    def complete(self, system, prompt, image=None, images=()):
+        if "reply ONLY with a section headed exactly `Questions:`" in prompt:
+            self.prompts.append(prompt)
+            return QUESTIONS
+        return super().complete(system, prompt, image=image, images=images)
+
+
+def post(web, **body):
+    body.setdefault("request", "a plate")
+    body.setdefault("review_rounds", 0)
+    s, d = call(web, "POST", "/api/generate", body)
+    assert s == 200, d
+    return wait_done(web)
+
+
+def test_ask_returns_questions_and_job_is_done(web, monkeypatch):
+    fake = use_llm(monkeypatch, AskLLM())
+    job = post(web, ask=True)
+    r = job["result"]
+    assert job["status"] == "done" and r["ok"] is False and r["error"] is None
+    assert r["questions"] == [{"text": "Which style?", "options": ["classic", "modern"], "compare": False},
+                              {"text": "Which size?", "options": [], "compare": False}]
+    assert len(fake.prompts) == 1
+
+
+def test_no_ask_has_empty_questions(web, monkeypatch):
+    use_llm(monkeypatch, AskLLM())
+    assert post(web)["result"]["questions"] == []
+
+
+def test_answers_go_into_the_prompt_and_ask_is_off(web, monkeypatch):
+    fake = use_llm(monkeypatch, AskLLM())
+    job = post(web, ask=True, answers=[{"question": "Which style?", "answer": "modern"}])
+    assert job["status"] == "done" and job["result"]["ok"]
+    assert "Answers to your clarifying questions:" in fake.prompts[0] and "A: modern" in fake.prompts[0]
+    assert "`Questions:`" not in fake.prompts[0]
+    assert job["request"] == "a plate"
+
+
+def test_answers_already_in_the_text_turn_ask_off(web, monkeypatch):
+    fake = use_llm(monkeypatch, AskLLM())
+    job = post(web, ask=True, request="a ring\n\nAnswers to your clarifying questions:\n- Q: Top?\n  A: flat")
+    assert job["status"] == "done" and job["result"]["ok"] and job["result"]["questions"] == []
+    assert "`Questions:`" not in fake.prompts[0]
+
+
+def test_variants_run_twice(web, monkeypatch):
+    fake = use_llm(monkeypatch, FakeLLM())
+    job = post(web, name="Ring", variants=["classic top", ""])
+    r = job["result"]
+    assert job["status"] == "done" and r["ok"] and r["questions"] == []
+    a, b = r["variants"]
+    assert (a["label"], b["label"]) == ("A", "B") and a["note"] == "classic top"
+    assert "different alternative to version A" in b["note"] and "plate is 80 x 50" in b["note"]
+    assert "Make this version: classic top" in fake.prompts[0]
+    assert "Make this version: a clearly different" in fake.prompts[1]
+    assert a["script"] == "Ring-A.fs" and b["script"] == "Ring-B.fs"
+    assert a["out_dir"].endswith("/A") and b["out_dir"].endswith("/B")
+    s, lines = call(web, "GET", f"/api/generate/{job['id']}/events")
+    assert b"[A] " in lines and b"[B] " in lines
+
+
+def test_variant_download_estimate_push(web, monkeypatch):
+    import fsgen.native.pushflow as pf
+    from fsgen.native.build import PushResult
+    monkeypatch.delenv("FSGEN_DOCUMENT", raising=False)
+    use_llm(monkeypatch, FakeLLM())
+    job = post(web, name="Ring", variants=["", ""])
+    jid = job["id"]
+    (web.root / "Ring-B.fs").write_text((web.root / "Ring-B.fs").read_text() + "\n// B\n")
+    for path in (f"/api/generate/{jid}/download?what=script", f"/api/generate/{jid}/download?what=zip",
+                 f"/api/generate/{jid}/estimate"):
+        assert call(web, "GET", path)[0] == 400
+        assert call(web, "GET", path + ("&" if "?" in path else "?") + "variant=C")[0] == 400
+    s, body = call(web, "GET", f"/api/generate/{jid}/download?what=script&variant=B")
+    assert s == 200 and b"// B" in body
+    s, body = call(web, "GET", f"/api/generate/{jid}/download?what=script&variant=A")
+    assert s == 200 and b"// B" not in body
+    assert call(web, "GET", f"/api/generate/{jid}/download?what=zip&variant=A")[1][:2] == b"PK"
+    assert call(web, "GET", f"/api/generate/{jid}/estimate?variant=A")[0] == 200
+    seen = []
+    monkeypatch.setattr(pf, "push", lambda o, tr, name, text, source, **k: (seen.append((name, text)),
+                        (PushResult(True, built=1, reused=0, url="u"), None))[1])
+    assert call(web, "POST", f"/api/generate/{jid}/push")[0] == 400
+    s, d = call(web, "POST", f"/api/generate/{jid}/push", {"variant": "B"})
+    assert s == 200 and d["ok"] and seen[0][0] == "Ring-B" and "// B" in seen[0][1]
+
+
+def test_variant_a_questions_stop_before_b(web, monkeypatch):
+    fake = use_llm(monkeypatch, AskLLM())
+    job = post(web, ask=True, variants=["", ""])
+    r = job["result"]
+    assert job["status"] == "done" and r["ok"] is False and r["variants"] == [] and r["questions"]
+    assert len(fake.prompts) == 1
+
+
+def test_variant_a_error_still_runs_b(web, monkeypatch):
+    calls = []
+
+    class Flaky(FakeLLM):
+        def complete(self, *a, **k):
+            calls.append(1)
+            if len(calls) == 1:
+                raise RuntimeError("boom")
+            return super().complete(*a, **k)
+    use_llm(monkeypatch, Flaky())
+    job = post(web, variants=["", ""])
+    a, b = job["result"]["variants"]
+    assert job["status"] == "failed" and not a["ok"] and "boom" in a["error"] and b["ok"]
+
+
+def test_questions_and_variants_validation(web):
+    for extra in ({"answers": "x"}, {"answers": [{"question": "q", "answer": "a"}] * 5},
+                  {"answers": [{"question": "q", "answer": "a" * 501}]}, {"answers": [{"question": "q"}]},
+                  {"answers": ["x"]}, {"variants": ["a"]}, {"variants": ["a", "b", "c"]}, {"variants": "ab"},
+                  {"variants": ["a", 3]}, {"variants": ["a", "b" * 301]}):
+        assert call(web, "POST", "/api/generate", {"request": "a plate", **extra})[0] == 400, extra

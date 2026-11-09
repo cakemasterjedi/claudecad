@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .checkworker import CheckCrashed, CheckTimeout, check_in_worker
 from .paths import list_scripts, resolve_in_root
+from ..native.script import set_variables
 from .server import HTTPError, route
 
 MAX_TEXT = 1_000_000
@@ -98,6 +99,38 @@ def create_script(req):
     return {"path": _rel(req, p), "mtime": _mtime(p)}
 
 
+def _variable_values(body) -> dict | None:
+    v = body.get("variables") if isinstance(body, dict) else None
+    if v is None:
+        return None
+    if not isinstance(v, dict) or not v or not all(isinstance(k, str) and isinstance(x, str) for k, x in v.items()):
+        raise HTTPError(400, "variables must be a non-empty object of name -> value string")
+    return v
+
+
+def _read_utf8(p: Path) -> str:
+    try:
+        return p.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        raise HTTPError(415, "script is not UTF-8 text")
+
+
+def _run(p: Path, mw: float, source: str | None = None) -> dict:
+    try:
+        return check_in_worker(p, mw, source)
+    except CheckTimeout as e:
+        raise HTTPError(504, "check timed out" if "timed out" in str(e) else str(e))
+    except CheckCrashed as e:
+        raise HTTPError(500, str(e))
+
+
+def _with_values(p: Path, values: dict) -> str:
+    try:
+        return set_variables(_read_utf8(p), values)
+    except ValueError as e:
+        raise HTTPError(400, str(e))
+
+
 @route("POST", "/api/check")
 def check(req):
     body = req.body if isinstance(req.body, dict) else {}
@@ -108,9 +141,24 @@ def check(req):
     if isinstance(mw, bool) or not isinstance(mw, (int, float)) or mw != mw:
         mw = 1.2
     mw = min(10.0, max(0.1, float(mw)))
-    try:
-        return check_in_worker(p, mw)
-    except CheckTimeout as e:
-        raise HTTPError(504, "check timed out" if "timed out" in str(e) else str(e))
-    except CheckCrashed as e:
-        raise HTTPError(500, str(e))
+    values = _variable_values(body)
+    return _run(p, mw, _with_values(p, values) if values else None)
+
+
+@route("PUT", "/api/variables")
+def save_variables(req):
+    """Apply new variable values to the saved script; the file is written only if the new source builds."""
+    body = req.body if isinstance(req.body, dict) else {}
+    p = resolve_in_root(req.app.root, body.get("path"))
+    if not p.is_file():
+        raise HTTPError(404, "no such script")
+    values = _variable_values(body)
+    if not values:
+        raise HTTPError(400, "variables required")
+    new = _with_values(p, values)
+    res = _run(p, 1.2, new)
+    if res.get("stage") in ("script", "local") and res.get("error"):
+        return 422, res
+    _atomic_write(p, new)
+    res["path"], res["mtime"] = _rel(req, p), _mtime(p)
+    return res

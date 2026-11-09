@@ -12,6 +12,7 @@ same volume as the local build of the native script.
 from __future__ import annotations
 
 import math
+import json
 import re
 
 import numpy as np
@@ -270,8 +271,9 @@ class PasteWriter:
             self.emit(f'opBoolean(context, {bid}, {{ "tools" : {tool_q}, "targets" : {scope}, '
                       f'"operationType" : BooleanOperationType.SUBTRACTION }});')
         else:
-            self.emit(f'opBoolean(context, {bid}, {{ "tools" : qUnion([{scope}, {tool_q}]), '
-                      f'"operationType" : BooleanOperationType.INTERSECTION }});')
+            # per target, like std extrude INTERSECT: an INTERSECTION of several scope bodies would be empty
+            self.emit(f'opBoolean(context, {bid}, {{ "tools" : {tool_q}, "targets" : {scope}, '
+                      f'"operationType" : BooleanOperationType.SUBTRACT_COMPLEMENT }});')
 
     def f_extrude(self, rec):
         i = self.ids[rec.name]
@@ -426,17 +428,44 @@ class PasteWriter:
 
     f_linearPattern = f_circularPattern = f_mirror = pattern
 
+    def emit_property(self, qt: QText, ptype: str, value):
+        """A setProperty call (part name / appearance) at its place in the feature order."""
+        if ptype == "NAME" and isinstance(value, str):
+            v = json.dumps(value)
+        elif ptype == "APPEARANCE":
+            c = value.get("color", value) if isinstance(value, dict) else None
+            if not (isinstance(c, dict) and all(k in c for k in ("red", "green", "blue"))):
+                raise PasteError("setProperty APPEARANCE: value must be color(r, g, b)")
+            comps = [_num(c[k]) for k in ("red", "green", "blue")]
+            if c.get("alpha", 1.0) != 1.0:
+                comps.append(_num(c["alpha"]))
+            v = f"color({', '.join(comps)})"
+        else:
+            self.emit(f"// setProperty {ptype} is not supported by fsgen and is skipped")
+            return
+        self.emit(f'setProperty(context, {{ "entities" : {self.query(qt)}, "propertyType" : PropertyType.{ptype}, '
+                  f'"value" : {v} }});')
+
     # ---------------------------------------------------------------- assemble
     def write(self) -> str:
         pre, derived = self.parameters()
         for line in derived:
             self.body.append(line)
-        for rec in self.tr.features:
+        pending = list(self.tr.properties)
+
+        def emit_properties(upto: int):
+            while pending and pending[0][0] <= upto:
+                _, qt, ptype, value, _line = pending.pop(0)
+                self.emit_property(qt, ptype, value)
+
+        for i, rec in enumerate(self.tr.features):
+            emit_properties(i)
             fn = getattr(self, f"f_{rec.feature_type}", None)
             if fn is None:
                 raise PasteError(f"\"{rec.name}\": {rec.feature_type} is not supported in the paste export")
             self.emit(f"// {rec.name}")
             fn(rec)
+        emit_properties(len(self.tr.features) + 1)
         if self.sketches:
             qs = ", ".join(f'qCreatedBy(id + "{s}", EntityType.BODY)' for s in self.sketches)
             self.emit("// remove the construction sketches and curves")

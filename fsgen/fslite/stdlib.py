@@ -24,8 +24,41 @@ ENUMS = {
     "NewBodyOperationType": ["NEW", "ADD", "REMOVE", "INTERSECT"],
     "ToleranceType": ["NONE"],
     "ToolBodyType": ["SOLID", "SURFACE"],
+    "PropertyType": ["NAME", "DESCRIPTION", "APPEARANCE", "MATERIAL", "PART_NUMBER", "VENDOR", "PROJECT", "PRODUCT_LINE",
+                     "TITLE1", "TITLE2", "TITLE3", "EXCLUDE_FROM_BOM", "REVISION", "STATE"],
     "ProfileControlMode": ["NONE", "KEEP_ORIENTATION", "LOCK_FACES", "LOCK_DIRECTION"],
 }
+
+
+def make_color(r, g, b, a=1.0):
+    """Onshape std color(red, green, blue [, alpha]): components are 0..1. Kept as a map like Onshape's Color."""
+    comps = []
+    for n, v in (("red", r), ("green", g), ("blue", b), ("alpha", a)):
+        if isinstance(v, bool) or not isinstance(v, (int, float)):
+            raise FSError(f"color: {n} must be a number between 0 and 1, got {type_name(v)}")
+        if not 0 <= v <= 1:
+            raise FSError(f"color: {n} = {v:g} is outside 0..1 (Onshape's color() takes fractions, not 0..255)")
+        comps.append(float(v))
+    return {"red": comps[0], "green": comps[1], "blue": comps[2], "alpha": comps[3]}
+
+
+def set_property(ctx, bodies, ptype, value, log=None):
+    """Onshape setProperty for the part properties fsgen keeps: NAME (string) and APPEARANCE (color(...) or a
+    map with a \"color\" entry). Other property types are logged and ignored."""
+    log = ctx.log if log is None else log
+    if ptype == "NAME":
+        if not isinstance(value, str) or not value:
+            raise FSError("setProperty NAME: \"value\" must be a non-empty string")
+        for b in bodies:
+            b.name = value
+    elif ptype == "APPEARANCE":
+        c = value.get("color", value) if isinstance(value, dict) else value
+        if not (isinstance(c, dict) and all(k in c for k in ("red", "green", "blue"))):
+            raise FSError("setProperty APPEARANCE: \"value\" must be color(r, g, b) (components 0..1)")
+        for b in bodies:
+            b.color = (c["red"], c["green"], c["blue"], c.get("alpha", 1.0))
+    else:
+        log.append(f"warning: setProperty {ptype} is not supported locally and was ignored")
 
 
 # ------------------------------------------------------------------ argument helpers
@@ -579,6 +612,21 @@ class StdLib:
             return Transform(m)
 
         # ---------------- queries
+        b["color"] = Builtin("color", make_color)
+
+        @fn("setProperty")
+        def _set_property(ctx, m):
+            ctx = need_ctx(ctx)
+            m = need_map(m, "setProperty")
+            pt = enum_name(req(m, "propertyType", "setProperty"), "PropertyType", "setProperty", "propertyType")
+            ents = need_query(req(m, "entities", "setProperty"), "setProperty").eval(ctx)
+            bodies = []
+            for e in ents:
+                bd = e.body
+                if bd is not None and bd.kind == "solid" and bd not in bodies:
+                    bodies.append(bd)
+            set_property(ctx, bodies, pt, req(m, "value", "setProperty"))
+
         b["qCreatedBy"] = Builtin("qCreatedBy", lambda fid, et=None: QCreatedBy(fid, et))
 
         @fn("qCapEntity")
@@ -1027,7 +1075,7 @@ class StdLib:
                 shape, hist = G.fuse_all([b.shape for b in allb])
                 creator = allb[0].creator
                 removed = allb if not keep else targets
-                new = [Body(s, creator) for s in G.solids_of(shape)]
+                new = [Body(s, creator, name=allb[0].name, color=allb[0].color) for s in G.solids_of(shape)]
                 ctx.commit(oid, hist, new_bodies=new, removed_bodies=removed)
                 return
             if kind == "INTERSECTION":
@@ -1040,12 +1088,12 @@ class StdLib:
                 for t in tools[1:]:
                     shape, h = G.boolean("INTERSECTION", [shape], [t.shape])
                     hists.append(h)
-                new = [Body(s, tools[0].creator) for s in G.solids_of(shape)]
+                new = [Body(s, tools[0].creator, name=tools[0].name, color=tools[0].color) for s in G.solids_of(shape)]
                 if not new:
                     raise FSError("opBoolean: intersection is empty")
                 ctx.commit(oid, _ChainedHistory(hists), new_bodies=new, removed_bodies=tools)
                 return
-            if kind not in ("SUBTRACTION", "INTERSECTION"):
+            if kind not in ("SUBTRACTION", "INTERSECTION", "SUBTRACT_COMPLEMENT"):
                 raise FSError(f"opBoolean: {kind} not supported")
             targets = _bodies(ctx, m, "targets", "opBoolean")
             tools = [t for t in tools if t not in targets]
@@ -1054,13 +1102,14 @@ class StdLib:
             new, removed = [], list(targets)
             hists = []
             for t in targets:
-                if kind == "INTERSECTION":
-                    # Onshape intersects the target with all tools together
+                if kind in ("INTERSECTION", "SUBTRACT_COMPLEMENT"):
+                    # SUBTRACT_COMPLEMENT (what std extrude INTERSECT uses): each target keeps only what lies inside
+                    # the tools, so several disjoint targets survive (a plain INTERSECTION of all of them is empty)
                     shape, hist = G.boolean("INTERSECTION", [t.shape], [x.shape for x in tools])
                 else:
                     shape, hist = G.boolean("SUBTRACTION", [t.shape], [x.shape for x in tools])
                 hists.append(hist)
-                new += [Body(s, t.creator) for s in G.solids_of(shape)]
+                new += [Body(s, t.creator, name=t.name, color=t.color) for s in G.solids_of(shape)]
             if not keep:
                 removed += tools
             ctx.commit(oid, _MultiHistory(hists), new_bodies=new, removed_bodies=removed)
@@ -1085,7 +1134,7 @@ class StdLib:
                 shape, hist = fn_(body.shape, items)
                 hists.append(hist)
                 removed.append(body)
-                new += [Body(s, body.creator) for s in G.solids_of(shape)]
+                new += [Body(s, body.creator, name=body.name, color=body.color) for s in G.solids_of(shape)]
             ctx.commit(oid, _MultiHistory(hists), new_bodies=new, removed_bodies=removed)
 
         @fn("opFillet")
@@ -1127,7 +1176,7 @@ class StdLib:
             for body in bodies:
                 shape, hist = G.transform_shape(body.shape, tr.m)
                 hists.append(hist)
-                new.append(Body(shape, body.creator))
+                new.append(Body(shape, body.creator, name=body.name, color=body.color))
             ctx.commit(oid, _MultiHistory(hists), new_bodies=new, removed_bodies=bodies)
 
         @fn("opPattern")

@@ -41,9 +41,14 @@ def breakdown(rows, top=10):
     return by_purpose.most_common(), by_call.most_common(top)
 
 
+PROPERTIES_NOT_PUSHED = ("part names and colors are not pushed by REST push; use `fsgen studio paste` or set them "
+                         "in Onshape")
+
+
 @dataclass
 class Estimate:
     items: list[tuple[str, int]]
+    warnings: list[str] = field(default_factory=list)
 
     @property
     def total(self) -> int:
@@ -97,7 +102,8 @@ def estimate_push(tr, state=None, metrics: bool = True, exports: tuple = ()) -> 
         items.append(("volume check", 1))
     for f in exports:
         items.append((f"{f.upper()} export", STEP_EXPORT_CALLS if f == "step" else STL_EXPORT_CALLS))
-    return Estimate(items)
+    warnings = [PROPERTIES_NOT_PUSHED] if getattr(tr, "properties", None) else []
+    return Estimate(items, warnings)
 
 
 def set_official(used: int, env_path: str = ".env"):

@@ -171,3 +171,16 @@ def test_measure_with_local_model(web, monkeypatch):
     monkeypatch.setattr(ua, "ollama_status", lambda: {"available": False, "model": "d", "models": []})
     s, d = call(web, "POST", "/api/measure", {"images": [iid], "model": "a:1"})
     assert s == 400 and "not reachable" in d["error"]
+
+
+def test_measure_returns_questions(web, monkeypatch):
+    class Fake:
+        name = "fake"
+
+        def complete(self, system, prompt, image=None, images=()):
+            return "- 80 mm wide\n\nQuestions:\n1. Which version? Options: tall | short\n"
+    monkeypatch.setattr(ua, "claude_llm", lambda *a, **k: Fake())
+    iid = up(web)[1]["id"]
+    s, d = call(web, "POST", "/api/measure", {"images": [iid], "backend": "claude"})
+    assert s == 200 and d["text"] == "- 80 mm wide"
+    assert d["questions"] == [{"text": "Which version?", "options": ["tall", "short"], "compare": False}]

@@ -9,7 +9,11 @@ write the Part Studio script, fsgen checks it, builds it locally and delivers it
 
 1. Run `.venv/bin/fsgen spec`: the script dialect, the user's `rules.md`, the feature catalog and verified
    examples. Follow it.
-2. If the request names a real product, look up its dimensions first (if you can browse). List your
+2. If the request leaves a design-changing choice open (style or version, which real product, several
+   plausible readings) and no sensible default settles it, ask the user 1-4 short questions with options
+   first. If they want to choose between two versions, make both (`parts/<name>-a.fs`, `parts/<name>-b.fs`)
+   and show both previews. Don't ask about details you can reasonably assume.
+   If the request names a real product, look up its dimensions first (if you can browse). List your
    assumptions (every dimension or interpretation the request doesn't state) and show them to the user.
 3. Write `parts/<name>.fs` (a Part Studio script).
 4. Run `.venv/bin/fsgen studio build parts/<name>.fs`: trace + local build (errors, geometry report, STEP/STL,
