@@ -4,9 +4,9 @@ import zipfile
 
 import pytest
 
-from fsgen.cli import main
-from fsgen.native.local import build_local
-from fsgen.native.script import trace
+from scriptforge.cli import main
+from scriptforge.native.local import build_local
+from scriptforge.native.script import trace
 
 HEAD = 'FeatureScript 3083;\nimport(path : "onshape/std/common.fs", version : "3083.0");\n'
 
@@ -43,7 +43,7 @@ def test_name_and_appearance_survive_a_boolean():
     loc = build(src)
     a = [b for b in loc.run.solids if b.name == "Red"]
     assert len(a) == 1 and a[0].color == pytest.approx((1, 0, 0.5, 1))
-    from fsgen.fslite import geom as G
+    from scriptforge.fslite import geom as G
     assert G.props(a[0].shape, "volume").Mass() * 1e9 < 20 * 20 * 5 - 100   # the hole was cut from the named body
     assert sum(1 for b in loc.run.solids if b.name is None) == 2
 

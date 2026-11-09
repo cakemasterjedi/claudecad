@@ -1,4 +1,4 @@
-# `fsgen studio fit examples/native/fit/lidded_box.fs`: the lid goes on the box (0 Onshape calls).
+# `scriptforge studio fit examples/native/fit/lidded_box.fs`: the lid goes on the box (0 Onshape calls).
 # Assembly frame = the box's print layout. All lengths in mm, angles in degrees.
 
 [parts.box]

@@ -6,7 +6,7 @@ body:
     id: description
     attributes:
       label: Your description
-      description: The exact text you gave fsgen or your assistant.
+      description: The exact text you gave ScriptForge or your assistant.
     validations:
       required: true
   - type: textarea
@@ -29,8 +29,8 @@ body:
       options:
         - Claude Code (/make-part)
         - Another coding assistant (AGENTS.md)
-        - fsgen generate (Claude)
-        - fsgen generate (other LLM via FSGEN_LLM_COMMAND)
+        - scriptforge generate (Claude)
+        - scriptforge generate (other LLM via SCRIPTFORGE_LLM_COMMAND)
         - By hand
     validations:
       required: true

@@ -2,7 +2,7 @@ FeatureScript 3083;
 import(path : "onshape/std/common.fs", version : "3083.0");
 
 // Box with a lid, laid out for printing: the box upright, the lid beside it upside down (plate on the bed,
-// the locating lip pointing up). lidded_box.fit.toml puts the lid on the box for `fsgen studio fit` / `view`.
+// the locating lip pointing up). lidded_box.fit.toml puts the lid on the box for `scriptforge studio fit` / `view`.
 export function build(context is Context, id is Id)
 {
     variable(context, "width", 30 * millimeter);

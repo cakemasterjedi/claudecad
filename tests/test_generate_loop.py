@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from fsgen.native import generate as gen
+from scriptforge.native import generate as gen
 
 ROOT = Path(__file__).resolve().parent.parent
 PLATE = (ROOT / "examples/native/plate.fs").read_text()
@@ -68,9 +68,9 @@ def test_reviewer_fix_gets_a_follow_up_review(run):
 
 
 def test_partial_build_is_flagged_to_the_reviewer():
-    from fsgen.native.local import build_local
-    from fsgen.native.prompts import review_prompt
-    from fsgen.native.script import trace
+    from scriptforge.native.local import build_local
+    from scriptforge.native.prompts import review_prompt
+    from scriptforge.native.script import trace
     tr = trace(THICKEN)
     loc = build_local(tr)
     unbuilt = gen.not_built_features(tr, loc)
@@ -115,4 +115,4 @@ def test_on_log_receives_messages_and_runs_in_threads_stay_separate(tmp_path, mo
         assert str(tmp_path / tag) in text and str(tmp_path / other) not in text
     assert capsys.readouterr().out == ""  # nothing printed when a sink is given
     gen.log("direct")  # no run active: falls back to printing
-    assert capsys.readouterr().out == "[fsgen] direct\n"
+    assert capsys.readouterr().out == "[scriptforge] direct\n"

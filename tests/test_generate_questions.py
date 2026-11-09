@@ -4,10 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from fsgen import cli
-from fsgen.native import generate as gen
-from fsgen.native.generate import extract_questions, split_questions
-from fsgen.native.prompts import append_answers, generate_prompt, variant_note
+from scriptforge import cli
+from scriptforge.native import generate as gen
+from scriptforge.native.generate import extract_questions, split_questions
+from scriptforge.native.prompts import append_answers, generate_prompt, variant_note
 from tests.test_generate_loop import PLATE, FakeLLM, block
 
 QUESTIONS = ("Questions:\n1. Which style? Options: round | square\n2. Which size range?\n")
@@ -157,4 +157,4 @@ def test_split_questions():
     assert body == "- 80 mm wide\n- 5 mm hole" and qs[0] == {"text": "Which version?", "options": ["A", "B"], "compare": False}
     assert qs[1]["options"] == []
     assert split_questions("- plain list") == ("- plain list", [])
-    assert "`Questions:`" in __import__("fsgen.native.prompts", fromlist=["x"]).measure_prompt()[1]
+    assert "`Questions:`" in __import__("scriptforge.native.prompts", fromlist=["x"]).measure_prompt()[1]

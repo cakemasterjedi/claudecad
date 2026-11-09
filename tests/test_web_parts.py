@@ -1,4 +1,4 @@
-"""fsgen web Parts tab: script list/read/save/create, path confinement, and the isolated check worker."""
+"""scriptforge web Parts tab: script list/read/save/create, path confinement, and the isolated check worker."""
 import http.client
 import json
 import shutil
@@ -7,10 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from fsgen.web import checkworker, parts_api  # noqa: F401  (importing registers the routes)
-from fsgen.web import server as srv
+from scriptforge.web import checkworker, parts_api  # noqa: F401  (importing registers the routes)
+from scriptforge.web import server as srv
 
-H = {"X-Fsgen": "1"}
+H = {"X-ScriptForge": "1"}
 PLATE = Path(__file__).resolve().parent.parent / "examples" / "native" / "plate.fs"
 
 
@@ -37,7 +37,7 @@ def call(web, method, path, body=None, auth=True, timeout=120):
     c = http.client.HTTPConnection("127.0.0.1", web[0], timeout=timeout)
     h = dict(H)
     if auth:
-        h["Cookie"] = f"fsgen_session={web[2]}"
+        h["Cookie"] = f"scriptforge_session={web[2]}"
     c.request(method, path, json.dumps(body) if body is not None else None, h)
     r = c.getresponse()
     raw = r.read()
@@ -87,7 +87,7 @@ def test_save_and_conflict(web):
     s, d = call(web, "PUT", "/api/scripts/sub/save.fs", {"text": "two", "mtime": mt})
     assert s == 200 and d["path"] == "sub/save.fs"
     assert (web[1] / "sub" / "save.fs").read_text() == "two"
-    assert not list((web[1] / "sub").glob(".fsgen-*"))
+    assert not list((web[1] / "sub").glob(".scriptforge-*"))
     # stale mtime -> 409 and the file is untouched
     s, d2 = call(web, "PUT", "/api/scripts/sub/save.fs", {"text": "three", "mtime": mt - 5})
     assert s == 409 and d2["error"] == "changed on disk"
@@ -149,10 +149,10 @@ def test_check_validation(web):
 
 def test_check_timeout_then_recovers(web, monkeypatch):
     checkworker.shutdown()  # fresh cold worker: importing OCP takes far longer than the timeout
-    monkeypatch.setenv("FSGEN_WEB_CHECK_TIMEOUT", "0.2")
+    monkeypatch.setenv("SCRIPTFORGE_WEB_CHECK_TIMEOUT", "0.2")
     s, d = call(web, "POST", "/api/check", {"path": "plate.fs"})
     assert s == 504 and d["error"] == "check timed out"
-    monkeypatch.delenv("FSGEN_WEB_CHECK_TIMEOUT")
+    monkeypatch.delenv("SCRIPTFORGE_WEB_CHECK_TIMEOUT")
     s, d = call(web, "POST", "/api/check", {"path": "plate.fs"})
     assert s == 200 and d["ok"] is True
 

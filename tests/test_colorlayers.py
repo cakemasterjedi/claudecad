@@ -3,8 +3,8 @@ import pytest
 from shapely.geometry import Point, Polygon, box
 from shapely.ops import unary_union
 
-from fsgen.native import colorlayers as cl
-from fsgen.native.colorlayers import Layer
+from scriptforge.native import colorlayers as cl
+from scriptforge.native.colorlayers import Layer
 
 
 def L(name, g, h=0.5, color=None):

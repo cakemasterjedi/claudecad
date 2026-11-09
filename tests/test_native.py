@@ -1,8 +1,8 @@
 """Native Part Studio scripts: tracing, expressions, validation and feature JSON (offline)."""
 from pathlib import Path
 
-from fsgen.native.build import feature_json
-from fsgen.native.script import trace as _trace
+from scriptforge.native.build import feature_json
+from scriptforge.native.script import trace as _trace
 
 
 def trace(src):
