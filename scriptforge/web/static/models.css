@@ -1,0 +1,25 @@
+/* Models tab: grid of cards grouped by day. Thumbnails share .thumb with the Workbench list. */
+main:has(.panel:not([hidden]) .models) { max-width: 80rem; }
+.m-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s2) var(--s3); margin-bottom: var(--s3); }
+.m-head h1 { margin: 0; font-size: 1.6rem; font-weight: 600; }
+.m-search { margin: 0 0 0 auto; display: flex; align-items: center; gap: 8px; font-weight: 400; color: var(--muted); }
+.m-search input { width: 14rem; max-width: 100%; }
+.m-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: var(--s5); }
+.m-chip { min-height: 0; padding: 7px 14px; border-radius: 999px; background: var(--surface-2); color: var(--text); border: 1px solid var(--border-strong); box-shadow: none; font-weight: 500; }
+.m-chip[aria-pressed="true"] { background: var(--text); color: #0f1216; border-color: var(--text); }
+.m-group { margin-bottom: var(--s5); }
+.m-group h2 { margin: 0 0 var(--s3); font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; }
+.m-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: var(--s4); }
+.m-card { display: flex; flex-direction: column; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; min-width: 0; }
+.m-thumb { display: block; width: 100%; height: 150px; min-height: 0; padding: 0; border: 0; border-radius: 0; background: #0b0e12; box-shadow: none; }
+.m-thumb .thumb { width: 100%; height: 100%; border-radius: 0; }
+.m-thumb .thumb img { object-fit: contain; }
+.m-thumb .thumb .ph { width: 56px; height: 56px; }
+.m-body { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; }
+.m-name b { font-weight: 600; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m-meta { font-size: .78rem; color: var(--muted); }
+.m-btns { display: flex; gap: 6px; margin-top: 6px; }
+.m-btns button { min-height: 2.4rem; }
+.m-btns button:first-child { flex: 1; }
+@media (max-width: 30rem) { .m-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s2); } .m-thumb { height: 110px; } .m-search { margin-left: 0; width: 100%; } .m-search input { flex: 1; width: auto; }
+  .m-name b { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; } .m-body { padding: 10px; } }

@@ -11,6 +11,13 @@
 
 ### Added
 
+- **`scriptforge web` Workbench + Models UI**: a dark 3-pane Workbench (history, 3D view, variables/prompt/log) and a
+  Models grid with thumbnails. On a phone: tabs in a bottom bar, the model list behind a Models button, and
+  Prompt, Assumptions and Log folded until tapped.
+- **`scriptforge web` downloads**: `?what=step` (the locally built STEP) and `?what=thumb` (the local preview PNG),
+  both 0 Onshape calls.
+- **Cloudflare Tunnel support**: behind a local tunnel the login limiter counts each visitor's `CF-Connecting-IP`
+  (trusted only from a loopback peer) instead of locking everyone out together.
 - **`scriptforge web` Download STL**: download the STL the local build already made (`?what=stl`), with no
   Onshape push and 0 Onshape calls.
 - **`fsgen web` Change it**: describe a change to a generated part; the result is saved as `<name>-rev.fs` and the

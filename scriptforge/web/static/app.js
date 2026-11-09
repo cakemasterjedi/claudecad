@@ -9,19 +9,24 @@
                                                  opts = {method:"POST", body:{...}}); onEvent(eventName, dataObject)
                                                  is called per event; the special event "close" fires when the stream
                                                  ends and "error" on a failure.
-     window.scriptforge.registerTab(name, mountFn)  -> adds a tab. mountFn(panelElement) runs once, when the tab is first
-                                                 shown after login. Tab order: Parts, Generate, Usage (by `order`
-                                                 table below; unknown names go last).
+     window.scriptforge.registerTab(name, mountFn, opts) -> adds a tab. mountFn(panelElement) runs once, when the tab is
+                                                 first shown after login. opts: {onShow()} runs every time the tab is
+                                                 shown. Tab order: Workbench, Models, New part, Scripts, Usage (by the
+                                                 `order` table below; unknown names go last).
      window.scriptforge.el(tag, attrs, ...children) -> small DOM builder (textContent only; no innerHTML, CSP forbids inline).
      window.scriptforge.showTab(name)               -> switch to a tab (mounting it if needed).
-     window.scriptforge.openScript(path)            -> set by parts.js: show the Parts tab with that script open.
+     window.scriptforge.openScript(path)            -> set by parts.js: show the Scripts tab with that script open.
+     window.scriptforge.openJob(id, variant)        -> show the Workbench with that generation selected (URL hash).
+     Shared helpers (see the `ui` object below): history(), thumb(), dayGroups(), jobTags(), downloadUrl(),
+     startDownload(), loadViewer(), spinner(), when().
 
-   Scripts load with `defer` in this order: app.js, usage.js, parts.js, generate.js. parts.js/generate.js may be
-   absent: the server answers with an empty script. Never use inline <script> or style="" attributes (CSP). */
+   Scripts load with `defer` in this order: app.js, variables.js, usage.js, parts.js, generate.js, workbench.js,
+   models.js. Never use inline <script> or style="" attributes (CSP); element.style from JS is fine. */
 (function () {
   "use strict";
-  const order = ["Parts", "Generate", "Usage"];
-  const tabs = {};   // name -> {mount, panel, button, mounted}
+  const order = ["Workbench", "Models", "New part", "Scripts", "Usage"];
+  const tabs = {};   // name -> {mount, onShow, panel, button, mounted}
+  const slug = n => n.toLowerCase().replace(/\s+/g, "-");
   let current = null;
 
   function el(tag, attrs, ...kids) {
@@ -87,14 +92,18 @@
     return {close: () => ctl.abort()};
   }
 
-  function registerTab(name, mount) {
+  function registerTab(name, mount, opts) {
     const panel = el("section", {"class": "panel", hidden: ""});
     const button = el("button", {type: "button", role: "tab", "aria-selected": "false", onclick: () => select(name)}, name);
-    tabs[name] = {mount, panel, button, mounted: false};
+    tabs[name] = {mount, onShow: (opts && opts.onShow) || null, panel, button, mounted: false};
     const names = Object.keys(tabs).sort((a, b) => rank(a) - rank(b));
     const nav = document.getElementById("tabs"), main = document.getElementById("panels");
     for (const n of names) { nav.append(tabs[n].button); main.append(tabs[n].panel); }
-    if (!document.getElementById("app").hidden && !current) select(names[0]);
+    if (!document.getElementById("app").hidden && !current) select(startTab(names));
+  }
+  function startTab(names) {  // from the URL hash (#workbench/<id>, #models, ...), else the first tab
+    const h = (location.hash || "").replace(/^#/, "").split("/")[0];
+    return names.find(n => slug(n) === h) || names[0];
   }
   const rank = n => { const i = order.indexOf(n); return i < 0 ? order.length : i; };
 
@@ -106,6 +115,21 @@
       t.button.setAttribute("aria-selected", on ? "true" : "false");
       if (on && !t.mounted) { t.mounted = true; t.mount(t.panel); }
     }
+    if (name !== "Workbench" && location.hash !== "#" + slug(name)) history.replaceState(null, "", "#" + slug(name));
+    if (tabs[name] && tabs[name].onShow) tabs[name].onShow();
+    refreshStatus();
+  }
+
+  // --- header status: Onshape calls left + local model
+  function setStatus(id, text) { const e = document.getElementById(id); if (e) e.textContent = text; }
+  async function refreshStatus() {
+    api("/api/usage").then(u => setStatus("st-calls", `Onshape: ${Number(u.left).toLocaleString()} calls left`),
+      () => setStatus("st-calls", "Onshape: unknown")).catch(() => {});
+    api("/api/llm").then(d => {
+      const ok = !!(d && d.ollama && d.ollama.available);
+      document.getElementById("st-dot").className = "dot " + (ok ? "ok" : "bad");
+      setStatus("st-model", ok ? "Local model ready" : "Local model unavailable");
+    }, () => setStatus("st-model", "Local model unavailable")).catch(() => {});
   }
 
   function showLogin() {
@@ -117,17 +141,94 @@
     document.getElementById("login").hidden = true;
     document.getElementById("app").hidden = false;
     const names = Object.keys(tabs).sort((a, b) => rank(a) - rank(b));
-    select(current && tabs[current] ? current : names[0]);
+    select(current && tabs[current] ? current : startTab(names));
   }
 
-  window.scriptforge = {api, sse, registerTab, el, showTab: select};
-
-  // Placeholders for tabs that later slices fill in (skipped when parts.js / generate.js already registered the tab).
-  function placeholder(name) {
-    return panel => panel.append(el("div", {"class": "card"}, el("h2", {}, name), el("p", {"class": "muted"}, "Coming soon.")));
+  // --- shared UI helpers for the Workbench, Models and New part tabs
+  const svgNS = "http://www.w3.org/2000/svg";
+  function placeholder() {  // neutral "no preview" cube
+    const svg = document.createElementNS(svgNS, "svg");
+    svg.setAttribute("viewBox", "0 0 26 26"); svg.setAttribute("class", "ph"); svg.setAttribute("aria-hidden", "true");
+    for (const d of ["M13 2 23 7.5v11L13 24 3 18.5v-11z", "M3 7.5 13 13l10-5.5M13 13v11"]) {
+      const p = document.createElementNS(svgNS, "path");
+      p.setAttribute("d", d); p.setAttribute("fill", "none"); p.setAttribute("stroke", "currentColor"); p.setAttribute("stroke-width", "1.5");
+      svg.append(p);
+    }
+    return svg;
   }
+  const spinner = () => el("span", {"class": "spinner", role: "status", "aria-label": "Running"});
+  const pad = n => String(n).padStart(2, "0");
+  const clock = t => { const d = new Date(t * 1000); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+  function dayLabel(t) {
+    const d = new Date(t * 1000), now = new Date();
+    const day = x => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+    const diff = Math.round((day(now) - day(d)) / 86400000);
+    if (diff === 0) return "Today";
+    if (diff === 1) return "Yesterday";
+    return d.toLocaleDateString([], d.getFullYear() === now.getFullYear() ? {month: "short", day: "numeric"} : {year: "numeric", month: "short", day: "numeric"});
+  }
+  function dayGroups(jobs) {  // [{label, jobs}] in list order
+    const out = [];
+    for (const j of jobs) {
+      const label = j.started ? dayLabel(j.started) : "Earlier";
+      if (!out.length || out[out.length - 1].label !== label) out.push({label, jobs: []});
+      out[out.length - 1].jobs.push(j);
+    }
+    return out;
+  }
+  const hasModel = j => j.status !== "failed" && (j.ok || (j.scripts || []).length > 0);
+  const jobVariant = j => (j.kept && j.kept.variant) || (j.variants && j.variants[0]) || null;
+  function jobTags(j) {  // "20:02 · A/B · kept B"
+    const t = [j.started ? clock(j.started) : ""];
+    if (j.status === "running") t.push("running");
+    if (j.variants && j.variants.length) t.push("A/B");
+    if (j.kept) t.push("kept " + j.kept.variant);
+    if (j.parent) t.push("revision");
+    if (j.status === "failed") t.push("failed");
+    else if (j.status === "done" && !hasModel(j)) t.push("questions");
+    return t.filter(Boolean).join(" \u00b7 ");
+  }
+  function downloadUrl(id, what, variant) {
+    return `/api/generate/${encodeURIComponent(id)}/download?what=${what}` + (variant ? `&variant=${encodeURIComponent(variant)}` : "");
+  }
+  function startDownload(id, what, variant) {
+    const a = el("a", {href: downloadUrl(id, what, variant), download: ""});
+    document.body.append(a); a.click(); a.remove();
+  }
+  function thumb(j) {  // <span class="thumb"> with the newest local review render, or a neutral placeholder
+    const box = el("span", {"class": "thumb"});
+    if (j.status === "running") { box.append(spinner()); return box; }
+    if (!hasModel(j)) { box.append(placeholder()); return box; }
+    const img = el("img", {src: downloadUrl(j.id, "thumb", jobVariant(j)), alt: "", loading: "lazy", decoding: "async"});
+    img.addEventListener("error", () => box.replaceChildren(placeholder()));
+    box.append(img);
+    return box;
+  }
+  const history_ = async () => (await api("/api/generate/history?limit=100")).jobs;
+  function loadViewer() {  // resolves to window.scriptforge3d, or null when viewer3d.js did not load
+    if (!window.scriptforge3d && !document.querySelector('script[src="/static/viewer3d.js"]')) {
+      document.head.append(el("script", {src: "/static/viewer3d.js", defer: ""}));
+    }
+    return new Promise(resolve => {
+      let n = 0;
+      const t = setInterval(() => { if (window.scriptforge3d || ++n > 50) { clearInterval(t); resolve(window.scriptforge3d || null); } }, 100);
+    });
+  }
+  function openJob(id, variant) {
+    location.hash = "#workbench/" + encodeURIComponent(id) + (variant ? "/" + encodeURIComponent(variant) : "");
+    select("Workbench");
+  }
+  function css(href) { if (!document.querySelector(`link[href="${href}"]`)) document.head.append(el("link", {rel: "stylesheet", href})); }
+
+  window.scriptforge = {api, sse, registerTab, el, showTab: select, openJob, css,
+    ui: {history: history_, thumb, dayGroups, jobTags, jobVariant, hasModel, downloadUrl, startDownload, loadViewer, spinner, placeholder, clock, slug}};
+
   window.addEventListener("DOMContentLoaded", () => {
-    for (const n of ["Parts", "Generate"]) if (!tabs[n]) registerTab(n, placeholder(n));
+    window.addEventListener("hashchange", () => {  // back/forward or a pasted link between tabs
+      const names = Object.keys(tabs), h = (location.hash || "").replace(/^#/, "").split("/")[0];
+      const n = names.find(x => slug(x) === h);
+      if (n && n !== current && !document.getElementById("app").hidden) select(n);
+    });
     document.getElementById("login-form").addEventListener("submit", async ev => {
       ev.preventDefault();
       const err = document.getElementById("login-error"); err.textContent = "";

@@ -304,7 +304,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _api(self, path, query):
         app = self.server.app
-        ip = self.client_address[0]
+        ip = self._client_ip()
         if self.command != "GET" and self.headers.get("X-ScriptForge") != "1":
             raise HTTPError(403, "missing X-ScriptForge header")
         if path == "/api/login" and self.command == "POST":
@@ -327,6 +327,16 @@ class Handler(BaseHTTPRequestHandler):
             self._json(result[0], result[1])
         else:
             self._sse(result, app.sse_keepalive)
+
+    def _client_ip(self) -> str:
+        """The peer address; behind a local Cloudflare Tunnel (peer is loopback) the visitor's CF-Connecting-IP, so the
+        login limiter throttles each visitor instead of everyone at once. Remote peers cannot set it for themselves."""
+        peer = self.client_address[0]
+        if peer in ("127.0.0.1", "::1"):
+            cf = (self.headers.get("CF-Connecting-IP") or "").strip()
+            if cf and len(cf) <= 45 and re.fullmatch(r"[0-9A-Fa-f:.]+", cf):
+                return cf
+        return peer
 
     def _login(self, app, ip):
         if app.limiter.blocked(ip):

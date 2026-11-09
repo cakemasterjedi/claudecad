@@ -1,5 +1,7 @@
-/* Small reusable three.js viewer: window.scriptforge3d.create(container) -> {show(parts), dispose()}.
+/* Small reusable three.js viewer: window.scriptforge3d.create(container) -> {show(parts), showStl(buffer, color), dispose()}.
    parts: [{label, color, stl}] with `stl` = base64 binary STL (see scriptforge/native/viewer.py scene_parts).
+   showStl takes a saved STL as ArrayBuffer. show() and showStl() resolve to {size: [x, y, z] (model units, mm),
+   volume (mm^3)} or null when nothing was shown.
    three.js is loaded on first use from the same CDNs as the standalone viewer; when that fails (offline), the
    container shows a message and show() resolves quietly so the text results keep working. */
 (function () {
@@ -52,8 +54,7 @@
       loader.stl = new THREE.STLLoader();
       ro = new ResizeObserver(resize); ro.observe(container);
       resize();
-      const dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
-      renderer.setClearColor(new THREE.Color(dark ? "#0f141a" : "#dfe4ea"));
+      renderer.setClearColor(new THREE.Color("#0b0e12"));
       (function loop() { raf = requestAnimationFrame(loop); controls.update(); renderer.render(scene, camera); })();
     }
     function resize() {
@@ -64,8 +65,23 @@
     function decode(b64) {
       const bin = atob(b64), buf = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
-      const g = loader.stl.parse(buf.buffer); g.computeVertexNormals();
+      return decodeBuffer(buf.buffer);
+    }
+    function decodeBuffer(ab) {
+      const g = loader.stl.parse(ab); g.computeVertexNormals();
       return g;
+    }
+    function volumeOf(g) {  // signed tetrahedra against the origin; assumes a closed, consistently wound mesh
+      const p = g.getAttribute("position"), idx = g.index;
+      const n = idx ? idx.count : p.count;
+      let v = 0;
+      for (let i = 0; i < n; i += 3) {
+        const a = idx ? idx.getX(i) : i, b = idx ? idx.getX(i + 1) : i + 1, c = idx ? idx.getX(i + 2) : i + 2;
+        const ax = p.getX(a), ay = p.getY(a), az = p.getZ(a), bx = p.getX(b), by = p.getY(b), bz = p.getZ(b),
+              cx = p.getX(c), cy = p.getY(c), cz = p.getZ(c);
+        v += ax * (by * cz - bz * cy) - ay * (bx * cz - bz * cx) + az * (bx * cy - by * cx);
+      }
+      return Math.abs(v / 6);
     }
     function render() {
       if (group) {
@@ -73,12 +89,15 @@
         group.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
       }
       group = new THREE.Group();
+      let volume = 0;
       for (const p of parts || []) {
-        group.add(new THREE.Mesh(decode(p.stl), new THREE.MeshStandardMaterial(
+        const g = p.geometry || decode(p.stl);
+        volume += volumeOf(g);
+        group.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial(
           {color: new THREE.Color(p.color), roughness: 0.6, metalness: 0.05, side: THREE.DoubleSide})));
       }
       scene.add(group);
-      if (!group.children.length) { note.textContent = "Nothing to show."; note.hidden = false; return; }
+      if (!group.children.length) { note.textContent = "Nothing to show."; note.hidden = false; return null; }
       note.hidden = true;
       const box = new THREE.Box3().setFromObject(group);
       const c = box.getCenter(new THREE.Vector3()), r = Math.max(box.getSize(new THREE.Vector3()).length() / 2, 1e-3);
@@ -86,6 +105,8 @@
       camera.position.copy(c).add(new THREE.Vector3(0.7, -1.2, 0.9).normalize().multiplyScalar(dist));
       camera.near = Math.max(dist / 1000, 0.01); camera.far = dist * 20; camera.updateProjectionMatrix();
       controls.target.copy(c); controls.update();
+      const sz = box.getSize(new THREE.Vector3());
+      return {size: [sz.x, sz.y, sz.z], volume};
     }
 
     const start = loadThree().then(() => {
@@ -97,13 +118,21 @@
       note.textContent = "3D preview needs three.js from a CDN and could not load it (offline?). The results above still apply.";
     });
 
+    async function present(p) {
+      parts = p;
+      await start;
+      if (ready && !disposed) {
+        try { return render(); } catch (e) { note.hidden = false; note.textContent = "Could not display the model: " + e.message; }
+      }
+      return null;
+    }
     return {
-      async show(p) {
-        parts = p;
-        await start;
-        if (ready && !disposed) {
-          try { render(); } catch (e) { note.hidden = false; note.textContent = "Could not display the model: " + e.message; }
-        }
+      show: present,
+      async showStl(buffer, color) {
+        await start;  // the loader exists only after three.js is ready
+        if (!ready || disposed) return null;
+        try { return await present([{label: "model", color: color || "#8fb4d9", geometry: decodeBuffer(buffer)}]); }
+        catch (e) { note.hidden = false; note.textContent = "Could not read the STL: " + e.message; return null; }
       },
       get failed() { return failed; },
       dispose() {

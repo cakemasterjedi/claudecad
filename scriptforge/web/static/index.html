@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>ScriptForge</title>
 <link rel="stylesheet" href="/static/app.css">
 </head>
@@ -35,6 +35,10 @@
   <header class="bar">
     <strong class="brand"><span>ScriptForge</span></strong>
     <nav id="tabs" aria-label="Sections"></nav>
+    <div class="status-bar" aria-live="polite">
+      <span id="st-calls">Onshape: …</span>
+      <span><span id="st-dot" class="dot"></span><span id="st-model">Local model…</span></span>
+    </div>
     <details id="account" class="menu">
       <summary class="ghost" aria-label="Account menu">&#8942;</summary>
       <div class="menu-list">
@@ -50,5 +54,7 @@
 <script defer src="/static/usage.js"></script>
 <script defer src="/static/parts.js"></script>
 <script defer src="/static/generate.js"></script>
+<script defer src="/static/workbench.js"></script>
+<script defer src="/static/models.js"></script>
 </body>
 </html>

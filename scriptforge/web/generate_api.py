@@ -13,9 +13,9 @@ POST /api/generate/{id}/keep     {variant: "A"|"B"} -> the job; the winner's scr
 POST /api/generate/{id}/revise   {change (1..2000 chars), variant?} -> {"id"}: a new job (parent = this one, name <name>-rev) that
                                  applies the change to the CURRENT saved script (409 if busy, like /api/generate)
 GET  /api/generate/{id}/events   -> SSE: `log` {i, text} (from ?from=N), then `done` {status, result}
-GET  /api/generate/{id}/download?what=script|stl|zip[&variant=A]   (variant is required for a job with variants; same for
+GET  /api/generate/{id}/download?what=script|stl|step|thumb|zip[&variant=A]   (variant is required for a job with variants; same for
                                  estimate (?variant=) and push (body {"variant"}))
-                                 -> the saved .fs, the locally built STL (part_local.stl, 0 Onshape calls), or a zip of the working files without the LLM logs (also for failed jobs)
+                                 -> the saved .fs, the locally built STL/STEP/preview PNG (part_local.*, local_view_0.png; 0 Onshape calls), or a zip of the working files without the LLM logs (also for failed jobs)
 GET  /api/generate/{id}/estimate -> {calls, text, mode, used, left, budget}: push estimate, 0 Onshape calls
 POST /api/generate/{id}/push     -> push the saved script to Onshape (one at a time; refused over the run budget or the
                                  allocation left) -> {ok, url, built, reused, warnings, error, api_calls}
@@ -560,6 +560,11 @@ def keep(req):
     return job.summary()
 
 
+# what= -> (file in the job's out_dir, download extension, content type)
+_BUILT = {"stl": ("part_local.stl", "stl", "model/stl"), "step": ("part_local.step", "step", "model/step"),
+          "thumb": ("local_view_0.png", "png", "image/png")}  # thumb: the newest local_view_N.png
+
+
 @route("GET", "/api/generate/{id}/download")
 def download(req):
     job = _job(req)
@@ -572,19 +577,24 @@ def download(req):
     if what == "script":
         p = _script_path(req, result)
         return Download(p.read_bytes(), f"{name}.fs", "text/plain; charset=utf-8")
-    if what not in ("zip", "stl"):
-        raise HTTPError(400, "what must be script, stl or zip")
+    if what not in ("zip", *_BUILT):
+        raise HTTPError(400, "what must be script, stl, step, thumb or zip")
     rel = result.get("out_dir")
     if not rel:
         raise HTTPError(404, "no working files for this job")
     out = resolve_in_root(req.app.root, rel, suffixes=None)
     if not out.is_dir():
         raise HTTPError(404, "the working files are gone")
-    if what == "stl":  # the mesh the local build already saved: no rebuild, no Onshape calls
-        stl = out / "part_local.stl"
-        if not stl.is_file():
-            raise HTTPError(404, "no STL was built for this job (the part did not build locally)")
-        return Download(stl.read_bytes(), f"{name}.stl", "model/stl")
+    if what in _BUILT:  # files the local build already saved: no rebuild, no Onshape calls
+        fname, ext, ctype = _BUILT[what]
+        f = out / fname
+        if what == "thumb":  # the last review render shows the final geometry
+            views = sorted(out.glob("local_view_*.png"), key=lambda p: int(p.stem.rsplit("_", 1)[1])
+                           if p.stem.rsplit("_", 1)[1].isdigit() else -1)
+            f = views[-1] if views else f
+        if not f.is_file():
+            raise HTTPError(404, f"no {what} was built for this job (the part did not build locally)")
+        return Download(f.read_bytes(), f"{name}.{ext}", ctype)
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         for f in sorted(out.rglob("*")):
