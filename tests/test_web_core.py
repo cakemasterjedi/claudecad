@@ -122,6 +122,21 @@ def test_rate_limit(web):
     assert login(web, "pw")[0].status == 429  # locked out even with the right password
 
 
+def test_rate_limit_per_tunnel_visitor(web):
+    # behind a local Cloudflare Tunnel every peer is loopback: throttle by CF-Connecting-IP instead
+    a = {**H, "CF-Connecting-IP": "203.0.113.5"}
+    for _ in range(5):
+        assert call(web, "POST", "/api/login", {"password": "bad"}, a)[0].status == 401
+    assert call(web, "POST", "/api/login", {"password": "pw"}, a)[0].status == 429
+    b = {**H, "CF-Connecting-IP": "198.51.100.7"}
+    assert call(web, "POST", "/api/login", {"password": "pw"}, b)[0].status == 200
+    assert login(web)[0].status == 200  # the plain loopback peer is a separate key
+    bogus = {**H, "CF-Connecting-IP": "x; drop"}  # malformed values fall back to the peer address
+    for _ in range(5):
+        assert call(web, "POST", "/api/login", {"password": "bad"}, bogus)[0].status == 401
+    assert login(web)[0].status == 429
+
+
 def test_limiter_unit():
     now = [0.0]
     lim = LoginLimiter(clock=lambda: now[0])

@@ -1,10 +1,8 @@
-/* Generate tab: describe a part, watch the progress, get a saved script. Runs locally (0 Onshape calls). */
+/* New part tab: describe a part, watch the progress, get a saved script. Runs locally (0 Onshape calls). */
 (function () {
   "use strict";
-  const {api, sse, el, registerTab} = window.scriptforge;
-  const link = document.createElement("link");
-  link.rel = "stylesheet"; link.href = "/static/generate.css";
-  document.head.append(link);
+  const {api, sse, el, registerTab} = window.scriptforge, {startDownload} = window.scriptforge.ui;
+  window.scriptforge.css("/static/generate.css");
 
   const fmt = s => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
@@ -46,7 +44,7 @@
     return blob;
   }
 
-  registerTab("Generate", panel => {
+  registerTab("New part", panel => {
     const request = el("textarea", {id: "gen-request", maxlength: "4000", rows: "5",
       placeholder: "e.g. A 80 x 50 x 6 mm mounting plate with four 5.5 mm holes 6 mm from the corners and 4 mm rounded corners"});
     const name = el("input", {id: "gen-name", type: "text", maxlength: "60", autocomplete: "off", placeholder: "optional, e.g. mount-plate"});
@@ -115,15 +113,13 @@
       el("ol", {"class": "steps"},
         step("1", "Describe", "Type the part, or add a photo and let the reader draft the measurements."),
         step("2", "Generate", "Claude writes a FeatureScript; ScriptForge builds, checks and reviews it locally."),
-        step("3", "Open", "The saved script opens in the Parts editor with a 3D preview.")));
+        step("3", "Open", "The model opens in the Workbench: 3D view, variables, downloads and revisions.")));
     const progress = el("div", {"class": "card progress", hidden: ""},
       el("div", {"class": "status"}, el("span", {"class": "live"}, statusText), elapsed), logBox);
     const resultCard = el("div", {"class": "card", hidden: ""});
-    const recentList = el("ul", {"class": "gen-recent-list"});
-    const recent = el("details", {"class": "card gen-recent"}, el("summary", {}, "Recent"), recentList);
-    panel.append(el("div", {"class": "page-head"}, el("div", {}, el("h1", {}, "Generate a part"),
+    panel.append(el("div", {"class": "page-head"}, el("div", {}, el("h1", {}, "New part"),
       el("p", {}, "Describe it in words, photos or sketches. Everything runs locally."))),
-      el("div", {"class": "gen"}, form, el("div", {"class": "gen-side"}, empty, progress, resultCard, recent)));
+      el("div", {"class": "gen"}, form, el("div", {"class": "gen-side"}, empty, progress, resultCard)));
 
     let stream = null, timer = null, job = null, seen = 0;
     let running = false, measuring = false, mTimer = null;
@@ -325,213 +321,55 @@
       if (stream) { stream.close(); stream = null; }
       if (timer) { clearInterval(timer); timer = null; }
     }
-    const viewers = [];
-    function loadViewer() {  // same lazy injection as the Parts tab; resolves to window.scriptforge3d or null
-      if (!window.scriptforge3d && !document.querySelector('script[src="/static/viewer3d.js"]')) {
-        document.head.append(el("script", {src: "/static/viewer3d.js", defer: ""}));
-      }
-      return new Promise(resolve => {
-        let n = 0;
-        const t = setInterval(() => {
-          if (window.scriptforge3d || ++n > 50) { clearInterval(t); resolve(window.scriptforge3d || null); }
-        }, 100);
-      });
-    }
-    function previewBlock(script) {
-      const view = el("div", {"class": "p-view gen-view", hidden: ""});
-      const note = el("p", {"class": "muted gen-prevnote", role: "status"}, "Building the 3D preview…");
-      const bar = el("div", {"class": "gen-scenes", role: "group", "aria-label": "Scene", hidden: ""});
-      const varSlot = el("div", {"class": "gen-vars", hidden: ""});
-      let setScenes = null;  // set once the viewer exists: rebuilds the scene buttons and re-shows the current scene
-      let panel = null;
-      const refresh = res => {  // after a variables preview/save: new geometry, or keep the old view and show the error
-        if (res && res.error) { note.hidden = false; note.textContent = "Build failed: " + res.error; return; }
-        note.hidden = true;
-        if (setScenes && res && res.scenes && res.scenes.length) setScenes(res.scenes);
-      };
-      (async () => {
-        try {
-          const [res, lib] = await Promise.all([
-            api("/api/check", {method: "POST", body: {path: script}}), loadViewer()]);
-          if (!view.isConnected) return;
-          const vars = (res && res.variables) || [];
-          if (vars.length && typeof window.scriptforge.variablesPanel === "function") {
-            panel = window.scriptforge.variablesPanel(script, {variables: vars, onPreview: refresh, onSaved: refresh});
-            varSlot.replaceChildren(el("b", {}, "Variables"), panel);
-            varSlot.hidden = false;
-          }
-          const scenes = (res && res.scenes) || [];
-          if (!scenes.length) { note.textContent = "No 3D preview for this part (it may not build locally)."; return; }
-          if (!lib) { note.textContent = "The 3D viewer script did not load."; return; }
-          note.hidden = false; note.textContent = "";
-          view.hidden = false;
-          const viewer = lib.create(view);
-          viewers.push(viewer);
-          let cur = 0, list = scenes;
-          const pick = async i => {
-            cur = i;
-            [...bar.children].forEach((x, k) => x.setAttribute("aria-pressed", String(k === i)));
-            await viewer.show(list[i].parts);
-          };
-          setScenes = async sc => {
-            list = sc; cur = Math.min(cur, sc.length - 1);
-            bar.replaceChildren(...sc.map((s2, i) => el("button", {type: "button", "class": "ghost gen-scene",
-              "aria-pressed": String(i === cur), onclick: () => pick(i)}, s2.name)));
-            bar.hidden = sc.length < 2;
-            await pick(cur);
-          };
-          note.hidden = true;
-          await setScenes(scenes);
-        } catch (e) { note.textContent = "No 3D preview: " + e.message; }
-      })();
-      return el("div", {"class": "gen-preview"}, note, bar, view, varSlot);
-    }
-    function startDownload(jobId, what, variant) {
-      const v = variant ? `&variant=${encodeURIComponent(variant)}` : "";
-      const a = el("a", {href: `/api/generate/${encodeURIComponent(jobId)}/download?what=${what}${v}`, download: ""});
-      document.body.append(a); a.click(); a.remove();
-    }
-    function pushBlock(jobId, jobName, variant) {
-      const out = el("div", {"class": "gen-pushout", role: "status"});
-      const pushBtn = el("button", {type: "button"}, "Push to Onshape");
-      const bothBtn = el("button", {type: "button", "class": "ghost"}, "Download + push");
-      let busy = false;
-      async function push(alsoDownload) {
-        if (busy) return;
-        busy = true; pushBtn.disabled = bothBtn.disabled = true; out.replaceChildren();
-        try {
-          const est = await api(`/api/generate/${encodeURIComponent(jobId)}/estimate` + (variant ? `?variant=${encodeURIComponent(variant)}` : ""));
-          if (!window.confirm(`Push "${jobName}" to Onshape? About ${est.calls} API calls (${est.left} of the allocation left).` + (est.warnings || []).map(w => `\n\nWarning: ${w}`).join(""))) return;
-          if (alsoDownload) startDownload(jobId, "zip", variant);
-          out.replaceChildren(el("span", {"class": "spinner"}), " Pushing to Onshape…");
-          const r = await api(`/api/generate/${encodeURIComponent(jobId)}/push`, variant ? {method: "POST", body: {variant}} : {method: "POST"});
-          const kids = [];
-          if (r.ok) kids.push(el("span", {"class": "ok"}, "Pushed"), " ",
-            el("a", {href: r.url, target: "_blank", rel: "noopener"}, "Open in Onshape"),
-            el("span", {"class": "muted"}, ` (${r.api_calls} API calls)`));
-          else kids.push(el("span", {"class": "error"}, r.error || "The push failed."));
-          for (const w of r.warnings || []) kids.push(el("p", {"class": "muted"}, "warning: " + w));
-          out.replaceChildren(...kids);
-        } catch (e) { out.replaceChildren(el("span", {"class": "error"}, e.message)); }
-        finally { busy = false; pushBtn.disabled = bothBtn.disabled = false; }
-      }
-      pushBtn.addEventListener("click", () => push(false));
-      bothBtn.addEventListener("click", () => push(true));
-      return [pushBtn, bothBtn, out];
-    }
-    function reviseBlock(jobId, label) {
-      const ta = el("textarea", {rows: "2", maxlength: "2000", "aria-label": "Change it",
-        placeholder: "e.g. make the walls 3 mm and add a lid lip"});
-      const btn = el("button", {type: "button", "class": "ghost"}, "Change it");
-      const err = el("p", {"class": "error", role: "alert"});
-      btn.addEventListener("click", async () => {
-        const change = ta.value.trim();
-        if (!change) { err.textContent = "Describe the change first."; return; }
-        err.textContent = ""; btn.disabled = true;
-        try {
-          const body = {change}; if (label) body.variant = label;
-          const {id} = await api(`/api/generate/${encodeURIComponent(jobId)}/revise`, {method: "POST", body});
-          attach(await api(`/api/generate/${encodeURIComponent(id)}`)); loadRecent();
-        } catch (e) { err.textContent = e.message; btn.disabled = false; }
-      });
-      return el("div", {"class": "gen-revise"}, el("label", {}, "Change it", ta), btn, err);
-    }
-    function resultBlocks(r, jobId, label, jobName) {  // one result (the job's, or one variant's)
+    function resultBlocks(r, label) {  // one result (the job's, or one variant's); viewing, push and revise live in the Workbench
       const kids = [];
       if (label) kids.push(el("h3", {}, "Version " + label), el("p", {"class": "muted"}, r.note || ""));
       kids.push(el("p", {"class": r.ok ? "ok" : "bad"}, r.ok ? (r.verified ? "Done: verified locally" : "Done: not fully verified (see the log)") : "Failed"));
       if (r.error) kids.push(el("p", {"class": "error"}, r.error));
       if (r.assumptions) kids.push(el("b", {}, "Assumptions"), el("div", {"class": "assume"}, r.assumptions));
-      if (r.script) {
-        kids.push(el("p", {}, "Saved as ", el("span", {"class": "path"}, r.script)));
-        kids.push(previewBlock(r.script));
-      }
-      if (jobId && (r.script || r.out_dir)) {
-        const acts = [];
-        if (r.script) acts.push(el("button", {type: "button", onclick: () => startDownload(jobId, "stl", label)}, "Download STL"));
-        if (r.script) acts.push(el("button", {type: "button", "class": "ghost", onclick: () => startDownload(jobId, "script", label)}, "Download .fs"));
-        acts.push(el("button", {type: "button", "class": "ghost", onclick: () => startDownload(jobId, "zip", label)}, "Download all (.zip)"));
-        const pushKids = r.script ? pushBlock(jobId, jobName + (label ? "-" + label : ""), label) : [];
-        kids.push(el("div", {"class": "gen-actions"}, ...acts, ...pushKids.slice(0, 2)));
-        if (pushKids[2]) kids.push(pushKids[2]);
-      }
-      if (r.ok && r.script && jobId) kids.push(reviseBlock(jobId, label));
-      if (r.script && typeof window.scriptforge.openScript === "function") {
-        kids.push(el("button", {type: "button", onclick: () => window.scriptforge.openScript(r.script)}, "Open in editor"));
-      }
-      if (r.out_dir) kids.push(el("p", {"class": "muted"}, "Working files: ", el("span", {"class": "path"}, r.out_dir)));
+      if (r.script) kids.push(el("p", {}, "Saved as ", el("span", {"class": "path"}, r.script)));
       return kids;
     }
     function showResult(status, r) {
       r = r || {};
-      while (viewers.length) { try { viewers.pop().dispose(); } catch (_) { /* already gone */ } }
       const kids = [el("h2", {}, "Result")];
-      if (job && job.parent) kids.push(parentNote(job.parent));
-      const jobId = job && job.id, jobName = (job && job.name) || "part";
+      const jobId = job && job.id;
+      const variants = r.variants && r.variants.length ? r.variants : null;
       if (r.questions && r.questions.length) {
         if (!request.value.trim() && job && job.request) request.value = job.request;
         kids.push(el("p", {}, "The model has some questions before it designs this."),
           questionsPanel(r.questions, "Continue", answers => submit(answers)));
-      } else if (r.variants && r.variants.length && job && job.kept) {
-        const w = r.variants.find(v => v.label === job.kept.variant) || r.variants[0];
-        kids.push(el("p", {"class": "muted"}, "Kept " + job.kept.variant),
-          ...resultBlocks(w, jobId, null, jobName));
-      } else if (r.variants && r.variants.length) {
-        kids.push(el("div", {"class": "gen-variants"},
-          ...r.variants.map(v => el("div", {"class": "gen-variant"}, ...resultBlocks(v, jobId, v.label, jobName),
-            v.ok && v.script && jobId ? el("button", {type: "button", onclick: () => keepVariant(v.label)}, "Keep this one") : ""))));
-      } else kids.push(...resultBlocks(r, jobId, null, jobName));
+      } else if (variants) {
+        const shown = job && job.kept ? variants.filter(v => v.label === job.kept.variant) : variants;
+        if (job && job.kept) kids.push(el("p", {"class": "muted"}, "Kept " + job.kept.variant));
+        for (const v of shown) kids.push(el("div", {"class": "gen-variant"}, ...resultBlocks(v, job && job.kept ? null : v.label)));
+      } else kids.push(...resultBlocks(r, null));
+      const acts = [];
+      if (jobId && (r.script || variants || r.out_dir)) {
+        acts.push(el("button", {type: "button", onclick: () => window.scriptforge.openJob(jobId)}, "Open in Workbench"));
+        acts.push(el("button", {type: "button", "class": "ghost", onclick: () => startDownload(jobId, "zip", job.kept ? job.kept.variant : null)}, "Download all (.zip)"));
+      }
+      const script = r.script || (variants && (variants.find(v => v.script) || {}).script);
+      if (script && typeof window.scriptforge.openScript === "function") {
+        acts.push(el("button", {type: "button", "class": "ghost", onclick: () => window.scriptforge.openScript(script)}, "Open in editor"));
+      }
+      if (acts.length) kids.push(el("div", {"class": "gen-actions"}, ...acts));
+      if (r.out_dir) kids.push(el("p", {"class": "muted"}, "Working files: ", el("span", {"class": "path"}, r.out_dir)));
       resultCard.replaceChildren(...kids);
       resultCard.hidden = false;
-    }
-    const when = t => t ? new Date(t * 1000).toLocaleString([], {month: "short", day: "numeric", hour: "2-digit", minute: "2-digit"}) : "";
-    let recentJobs = [];
-    function parentNote(pid) {  // "Revision of <name>", clickable when the parent is in the history
-      const p = recentJobs.find(x => x.id === pid);
-      return el("p", {"class": "muted"}, "Revision of ", p
-        ? el("button", {type: "button", "class": "ghost gen-link", onclick: () => reopen(pid)}, p.name) : "an earlier job");
-    }
-    async function loadRecent() {
-      try {
-        const {jobs} = await api("/api/generate/history?limit=30");
-        recentJobs = jobs;
-        recent.hidden = !jobs.length;
-        recentList.replaceChildren(...jobs.map(j => el("li", {},
-          el("button", {type: "button", "class": "ghost gen-recent-item", "aria-current": String(!!job && job.id === j.id),
-            onclick: () => reopen(j.id)},
-            el("b", {}, j.name), " ",
-            el("span", {"class": "muted"}, when(j.started) + " · "),
-            el("span", {"class": j.status === "running" ? "muted" : (j.ok ? "ok" : "bad")},
-              j.status === "running" ? "running" : (j.ok ? "done" : (j.status === "done" ? "questions" : "failed"))),
-            j.kept ? el("span", {"class": "muted"}, " · kept " + j.kept.variant) : ""),
-          j.parent ? el("span", {"class": "muted gen-rev"}, " revision of ",
-            jobs.find(x => x.id === j.parent) ? el("button", {type: "button", "class": "ghost gen-link",
-              onclick: () => reopen(j.parent)}, jobs.find(x => x.id === j.parent).name) : "an earlier job") : "")));
-      } catch (_) { /* history is optional */ }
-    }
-    async function reopen(id) {
-      if (running && !(job && job.id === id)) { formErr.textContent = "Wait for the running generation to finish."; return; }
-      formErr.textContent = "";
-      try { attach(await api(`/api/generate/${encodeURIComponent(id)}`)); loadRecent(); }
-      catch (e) { formErr.textContent = e.message; }
-    }
-    async function keepVariant(label) {
-      if (!window.confirm("Delete the other version's script?")) return;
-      try {
-        const j = await api(`/api/generate/${encodeURIComponent(job.id)}/keep`, {method: "POST", body: {variant: label}});
-        job.kept = j.kept; job.result = j.result;
-        showResult(job.status, j.result);
-        loadRecent();
-      } catch (e) { window.alert(e.message); }
     }
     function finish(status, result) {
       stopTimers();
       if (job) { job.finished = job.finished || Date.now() / 1000; job.status = status; }
-      loadRecent();
       tick();
       statusText.textContent = status === "done" ? "Finished" : "Failed";
       setBusy(false);
       showResult(status, result);
+      const live = watched;  // finished while this page followed it: jump to the model
+      watched = false;
+      if (live && status === "done" && result && !(result.questions && result.questions.length) && job && panel.isConnected && !panel.hidden) {
+        window.scriptforge.openJob(job.id, job.kept ? job.kept.variant : null);
+      }
     }
     function connect() {
       stopTimers();
@@ -546,8 +384,9 @@
         }
       });
     }
+    let watched = false;  // true once this page has seen the job running
     function attach(j) {  // replays the log from line 0, then follows it; a finished job just replays
-      job = j; seen = 0;
+      job = j; seen = 0; watched = j.status === "running";
       logBox.textContent = ""; resultCard.hidden = true; progress.hidden = false; empty.hidden = true;
       statusText.textContent = j.status === "running" ? "Running…" : "";
       setBusy(j.status === "running"); tick();
@@ -575,7 +414,6 @@
     }
     form.addEventListener("submit", ev => { ev.preventDefault(); submit(null); });
 
-    loadRecent();
     (async () => {  // re-attach after reopening the page
       try {
         const {job: j} = await api("/api/generate/current");

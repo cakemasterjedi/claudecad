@@ -1,4 +1,4 @@
-/* Parts tab: script list, editor, save, check (0 Onshape calls) and 3D preview. See parts_api.py for the routes. */
+/* Scripts tab: script list, editor, save, check (0 Onshape calls) and 3D preview. See parts_api.py for the routes. */
 (function () {
   "use strict";
   const {api, el, registerTab} = window.scriptforge;
@@ -11,7 +11,7 @@
     document.head.append(el(tag, attrs));
   }
 
-  registerTab("Parts", mount);
+  registerTab("Scripts", mount);
 
   function mount(panel) {
     const st = {path: null, mtime: null, dirty: false, scripts: [], result: null, scene: 0, viewer: null, busy: false};
@@ -236,7 +236,7 @@
 
     // --- go
     window.scriptforge.openScript = async path => {
-      window.scriptforge.showTab("Parts");
+      window.scriptforge.showTab("Scripts");
       await loadList();
       await open(path);
     };

@@ -273,6 +273,15 @@ def test_download_stl_makes_no_onshape_calls(web, monkeypatch):
     (out / "part_local.stl").unlink()
     s, d = call(web, "GET", f"/api/generate/{jid}/download?what=stl")
     assert s == 404
+    for what, fname in (("step", "part_local.step"), ("thumb", "local_view_0.png")):
+        (out / fname).write_bytes(b"data-" + what.encode())
+        s, body = call(web, "GET", f"/api/generate/{jid}/download?what={what}")
+        assert s == 200 and body == b"data-" + what.encode()
+        (out / fname).unlink()
+        assert call(web, "GET", f"/api/generate/{jid}/download?what={what}")[0] == 404
+    for n in (0, 2, 10):  # the thumbnail is the newest review render (numeric order, not text order)
+        (out / f"local_view_{n}.png").write_bytes(f"view{n}".encode())
+    assert call(web, "GET", f"/api/generate/{jid}/download?what=thumb")[1] == b"view10"
 
 
 def test_download_failed_running_and_no_script(web):
