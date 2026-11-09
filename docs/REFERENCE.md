@@ -96,6 +96,7 @@ In a chat, any coding assistant can be the designer instead: see `AGENTS.md`.
 | `fsgen generate "<request>" [--name N] [--paste] [--reviews 2] [--no-web] [--document URL]` | **native**: prompt → script → Onshape feature tree → repair/review → `out/native/<run>/` (script, STEP/STL, Onshape renders, transcripts) |
 | `/make-part <description>` (in a Claude Code chat) | the chat designs `parts/<name>.fs` with the commands below; you steer, then paste or push |
 | `fsgen studio paste script.fs` | custom feature to paste into a Feature Studio (0 calls; clipboard + optional Dropbox copy) |
+| `fsgen emboss art.svg file.fs [-o OUT.fs] [--plane --offset --cylinder R ...]` | flat-color SVG art onto a script as raised multicolor bodies (0 calls); see `fsgen emboss -h` |
 | `fsgen recognize part.step` | STEP → editable Part Studio script via featuretree recognition (0 calls) |
 | `fsgen usage [--set-official N]` | API calls used/left |
 | `fsgen spec` | print the instructions/spec the designer follows (rules, catalog, examples) |
@@ -105,6 +106,8 @@ In a chat, any coding assistant can be the designer instead: see `AGENTS.md`.
 | `fsgen studio view script.fs [--fit F]` | interactive 3D viewer `out/<name>/<name>_view.html` (0 calls): print layout and, with a fit file, the assembly; hide parts, cut along X/Y/Z |
 | `fsgen studio push script.fs [--name N] [--fresh] [--export] [--document URL]` | build/update the Part Studio incrementally (only from the first changed feature); `--document` (or `FSGEN_DOCUMENT`) builds in your own Onshape document instead of `fsgen-workspace` |
 | `fsgen features [type] [--all] [--refresh]` | feature catalog / one feature's settable parameters |
+| `fsgen generate "<request>" --ask` | the model may ask 1-4 clarifying questions first (answered on the terminal, then one re-run into `<out>-answered`; without a terminal the questions are printed as JSON and the exit code is 2) |
+| `fsgen generate "<request>" --variant "<note A>" --variant "<note B>"` / `--ab` | make versions A, B, ... one after the other (`<out>/A`, `<out>/B`; B defaults to a different alternative to A's assumptions); prints `{"variants": [...]}` |
 | `fsgen generate --custom "<request>" [--cloud]` | older single-custom-feature mode with local OCCT build/repair/review |
 | `fsgen run part.fs [-p name=value] [--png]` | local build + STEP/STL (+ 4-view PNG) |
 | `fsgen watch part.fs` | rebuild on save, live three.js viewer at http://127.0.0.1:8765 |

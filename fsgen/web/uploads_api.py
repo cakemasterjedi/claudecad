@@ -149,7 +149,9 @@ def measure(req):
             text = llm.complete(system, prompt, images=paths)
         except LLMError as e:
             raise HTTPError(502, str(e))
-        return {"text": text.strip(), "backend": backend,
+        from ..native.generate import split_questions
+        text, questions = split_questions(text.strip())
+        return {"text": text.strip(), "questions": questions, "backend": backend,
                 "model": (model or getattr(llm, "model", None)) if backend == "ollama" else None,
                 "seconds": round(time.time() - t0, 1)}
     finally:

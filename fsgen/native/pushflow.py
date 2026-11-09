@@ -27,6 +27,9 @@ def push(o, tr, name: str, script_text: str, source: str, document: str | None =
     ws = target_workspace(o, document, public=public)
     st = nb.get_studio(o, name, ws["did"], ws["wid"], fresh=fresh)
     r = nb.push_trace(o, st, tr)
+    if tr.properties:
+        from ..usage import PROPERTIES_NOT_PUSHED
+        r.warnings.append(PROPERTIES_NOT_PUSHED)
     if r.ok:
         learned = catalog.record_success(tr.features, script_text, source)
         if learned and on_learned:

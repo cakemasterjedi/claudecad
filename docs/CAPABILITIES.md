@@ -149,6 +149,61 @@ changes the limit.
 `<name>_<part>.<ext>` in its print layout position; part names come from the fit file (`[parts.<name>]`), else
 `part<N>`.
 
+Part names and colors (multicolor printing): `setProperty(context, { "entities" : q, "propertyType" :
+PropertyType.NAME, "value" : "Yellow" })` and `PropertyType.APPEARANCE` with `"value" : color(r, g, b)` (components
+0..1, as in Onshape) are stored on the bodies, kept through later booleans/extrudes/fillets of those bodies, and
+applied by the local build in script order (they are not features: `studio paste` writes them into the pasted custom feature, as std `setProperty`/`color` calls at their place in the feature order; the REST `studio push` cannot send them and warns "part names and colors are not pushed by REST push" in the estimate, the push result and the web push). Other
+property types log a warning and are ignored. Export: the setProperty name comes first, the fit file overrides it by
+`at` point, else `part<N>`. Solids that share a name are ONE group: one 3MF object (a compound mesh, labelled with the
+name, colored by the appearance) and one `<name>_<group>.<ext>` per group; with no names set nothing changes. The
+preview PNG shades bodies in their appearance color.
+Overlap check (multicolor builds: more than one solid and at least one name set): `studio check|build` and the web
+check list pairs of solids whose volumes overlap by more than 0.001 mm3 (bounding-box prefilter, then
+`fit.overlap`); touching is fine. It only reports, export is not blocked. The prompts (`fsgen spec`) have a short
+"Multicolor parts" section: one NEW body per color, no overlaps, name + `color(r, g, b)` (0..1) on every body.
+Example: `examples/native/multicolor_tag.fs` (base + disc + bar, three 3MF objects). See `parts/champ_ring_logos/make_ring.py` (Bambu AMS ring).
+
+## Multicolor emboss library (`fsgen/native/colorlayers.py`, `emboss.py`)
+
+Raised flat-color art on a base part, as a library (plain functions; shapely + stdlib only at import, `svgelements`
+is imported lazily by `from_svg`). 2D side (`colorlayers`, mm, +y up): `Layer(color, name, geometry, height, label)`;
+`split(layers)` (top priority first: each layer loses everything above it, hairline slivers closed/opened by 0.03 mm,
+pieces under 0.01 mm2 dropped); `widen(layers, min_width=0.45, carve=False, absorb=True, absorbed=None)` grows thin bands (opening of radius
+min_width/2 removes them; pieces under 0.5 min_width2 or shorter than 1.5 min_width are tips/specks and left alone)
+over lower layers or empty space, never over a higher layer, re-cleans the lower layers and returns `(layers, still
+thin)`; `carve=True` also lets a band enclosed by higher layers take area from them, only when that lowers the
+total thin score; `absorb` (default) merges a band still thin afterwards into the adjacent higher layer with the longest shared border (that layer gets slightly wider there; each merge is appended to `absorbed` as (from, to, label, area)); `Emboss` simplifies each placement's layers by 0.01 mm with lower layers losing the simplified higher ones, so solids never overlap; `thin_report`, `narrowest`; `from_svg(path, height=, names=)` (filled paths/rects/circles, painter
+order, fill rules, viewBox/transform, text and stroke-only shapes ignored with a warning, colors named from a small
+table); `fit(layers, width, center, mirror_u)`, `mirror`, `translate`. FeatureScript side: `Emboss(base=<FS query of
+the base bodies>)` with `flat(name, plane, layers)` (each layer NEW from the sketch plane by its height, then
+base subtracted with keepTools) and `cylinder(name, plane, layers, standoff, depth_in, opposite, axis_plane,
+axis_center, radius, span)` (prisms from `standoff` outside the barrel, trimmed per height by an INTERSECT extrude of
+a circle of radius + height scoped to those prisms, base subtracted), `properties(base=(name, hex))` (one NAME +
+APPEARANCE per color group), `source()`. Only std calls already used in `parts/*.fs` (newSketch, skPolyline,
+skCircle, extrude, booleanBodies, setProperty, color). The INTERSECT trim reproduces the former crescent REMOVE trim
+exactly (same volumes on the ring). Used by `parts/champ_ring_logos/make_ring.py`; tests: `tests/test_colorlayers.py`,
+`tests/test_emboss.py`.
+
+
+### `fsgen emboss ART.svg PART.fs` (0 Onshape calls)
+
+Puts a flat-color SVG on an existing native script as raised multicolor bodies (uses the library above). PART.fs is
+not overwritten: the output is `<stem>_emboss.fs` unless `-o`. The block is appended at the end of the `build`
+function (`export function build(context is Context, id is Id)`, or the function inside `defineFeature`). Base query:
+`qSubtraction(qAllModifiableSolidBodies(), qUnion([<art extrudes>]))`, i.e. everything that is not art, evaluated lazily
+(works however the file made its bodies; accepted by fslite, the tracer, paste and Onshape). Feature ids and sketch
+variables are made unique, so it can be run again on its own output (second art gets `Emboss 2 ...`).
+
+    fsgen emboss logo.svg examples/native/multicolor_tag.fs --plane top --offset 3 --width 5.6 --center -1,0 \
+        --skip-color '#ffffff' --heights Yellow=0.8 --names '#f5d90a=Gold'
+    fsgen emboss logo.svg barrel.fs --cylinder 20 --plane right --offset 20 --center 0,15 --width 16   # curved face
+    fsgen studio build examples/native/multicolor_tag_emboss.fs --formats step,stl,3mf
+
+Art (u, v) = the plane's sketch x, y seen from its normal side (Top u=X v=Y, Front u=X v=Z, Right u=Y v=Z); `--flip`
+extrudes against the normal, `--mirror` mirrors u. With `--cylinder R`, `--offset` is the signed distance of the barrel's
+apex line from the plane (negative = the -normal side), `--axis-plane` is the default plane perpendicular to the axis,
+`--axis-center U,V` the axis position, `--standoff/--depth-in/--span/--span-side` as in `Emboss.cylinder`. The report
+lists color groups, widening (before/after, absorbed, still thin) and the placement box.
 
 ## Two ways to get a part into Onshape
 

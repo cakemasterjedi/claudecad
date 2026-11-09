@@ -191,6 +191,8 @@ class Body:
     creator: Id
     kind: str = "solid"  # solid | sketch | wire (curves such as a helix)
     helical: bool = False  # wire body made by opHelix: sweeps along it use the Frenet frame
+    name: str | None = None  # setProperty NAME (part name); carried over when an operation replaces the body
+    color: tuple | None = None  # setProperty APPEARANCE as (r, g, b, a), components 0..1
 
 
 @dataclass(eq=False)

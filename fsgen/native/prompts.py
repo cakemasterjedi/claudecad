@@ -124,10 +124,19 @@ Query point/vector arguments must be plain numbers (no #variables inside queries
 point-based query loses its entity when a variable moves it. Prefer queries by feature (qCreatedBy, qCapEntity).
 Select edges for fillets/chamfers geometrically (qContainsPoint with a point ON the edge, qParallelEdges) -- never by index.
 
+# Multicolor parts (only when the part is printed in several colors/filaments)
+Make each color its own solid body: extrude it with NewBodyOperationType.NEW (never ADD into the base). Bodies must
+not overlap (touching is fine); raised art sits ON the surface of the base. Then name and color every body:
+setProperty(context, { "entities" : qCreatedBy(id + "Disc", EntityType.BODY), "propertyType" : PropertyType.NAME, "value" : "Yellow" });
+setProperty(context, { "entities" : qCreatedBy(id + "Disc", EntityType.BODY), "propertyType" : PropertyType.APPEARANCE, "value" : color(1, 0.8, 0) });
+color(r, g, b) takes components 0..1, not 0..255. Bodies with the same name are one color/filament group. Single-color
+parts need none of this.
+
 # Checklist
 - Unless asked otherwise: one part, Z up, sitting on the Top plane, roughly centered or at a sensible corner.
 - Order: variables -> base sketch + extrude -> secondary bodies (ADD) -> cuts (REMOVE) -> patterns -> fillets/chamfers.
 - Cutting extrudes: THROUGH_ALL in the right direction, booleanScope = the part.
+- Multicolor: one NEW body per color, no overlaps, every body named + colored (color() is 0..1).
 """
 
 
@@ -148,15 +157,52 @@ def system_prompt() -> str:
     return "\n".join(parts)
 
 
-def generate_prompt(request: str, mode_note: str = "", has_images: bool = False) -> str:
-    return (f"Design request:\n{request.strip()}\n\n" + (f"{mode_note.strip()}\n\n" if mode_note else "")
+ASK_NOTE = ("If the request leaves open a choice that changes the design substantially, and a sensible default "
+            "cannot settle it (e.g. which style or version, which real product or model, which of several plausible "
+            "interpretations), reply ONLY with a section headed exactly `Questions:` containing 1-4 numbered "
+            "questions and NO script. Each question may end with ` Options: a | b | c` (2-4 short options). "
+            "Only when two options are equally reasonable and the user would likely want both built to choose, end "
+            "that question with ` [compare]` (at most one question, rarely). Do not "
+            "ask about dimensions or details you can reasonably assume: list those under Assumptions and design. "
+            "If nothing important is unclear, design as usual.")
+
+
+def generate_prompt(request: str, mode_note: str = "", has_images: bool = False, ask: bool = False,
+                    variant_note: str | None = None) -> str:
+    return (f"Design request:\n{request.strip()}\n\n"
+            + (f"This is one of two versions the user wants to compare. Make this version: {variant_note.strip()}. "
+               "Follow it even where it differs from the most obvious interpretation.\n\n"
+               if variant_note and variant_note.strip() else "")
+            + (f"{mode_note.strip()}\n\n" if mode_note else "")
             + ("Reference photos/sketches of the part are attached; use their dimensions where the request does "
                "not state them.\n\n" if has_images else "")
+            + (ASK_NOTE + "\n\n" if ask else "")
             + "Before the code, write a section headed exactly `Assumptions:` listing every dimension, size or "
             "interpretation you chose that the request does not state explicitly (e.g. bit size, wall thickness, "
             "clearances, which part goes where), with the value you used. If the request names a real product and "
             "you can look it up, say what you found and where. Then plan the feature tree in 3-8 short bullets "
             "(variables, sketch planes and coordinates, feature order), then give the complete script.")
+
+
+def append_answers(request: str, answers: list[dict]) -> str:
+    """The request plus the user's answers to the model's clarifying questions (empty answers are skipped)."""
+    lines = [f"- Q: {a['question'].strip()}\n  A: {a['answer'].strip()}" for a in answers
+             if str(a.get("answer") or "").strip()]
+    if not lines:
+        return request
+    return request.rstrip() + "\n\nAnswers to your clarifying questions:\n" + "\n".join(lines)
+
+
+def variant_note(label: str, text: str | None, other_assumptions: str | None = None) -> str:
+    if text and text.strip():
+        return text.strip()
+    if label.upper() == "A":
+        return "the most likely interpretation of the request"
+    note = "a clearly different alternative to version A"
+    if other_assumptions and other_assumptions.strip():
+        note += (f". Version A was made with these assumptions: {other_assumptions.strip()}; "
+                 "choose differently on the open choices")
+    return note
 
 
 def measure_prompt(note: str = "") -> tuple[str, str]:
@@ -169,7 +215,13 @@ def measure_prompt(note: str = "") -> tuple[str, str]:
               "Give estimated sizes for features that have no written dimension and mark each one \"(estimated)\". "
               "Mark any reading you cannot make out clearly \"(unsure)\". "
               "Output a plain-text bullet list that a CAD designer can paste into a part request. "
-              "No code and no preamble.")
+              "No code and no preamble. "
+              "If the photos leave a design-changing choice open (e.g. they show more than one version or variant "
+              "of the part, or it is unclear which part or feature is meant), end the answer with a section headed "
+              "exactly `Questions:` containing 1-4 numbered questions, each optionally ending with "
+              "` Options: a | b | c`. Only when two options are equally reasonable and the user would likely want both "
+              "built to choose, end that question with ` [compare]` (at most one question, rarely). "
+              "Otherwise do not add the section.")
     if note and note.strip():
         prompt += f"\n\nNote from the user:\n{note.strip()}"
     return system, prompt
@@ -179,6 +231,18 @@ def repair_prompt(request: str, code: str, error: str, where: str) -> str:
     return (f"Design request:\n{request.strip()}\n\nCurrent script:\n```featurescript\n{code.strip()}\n```\n\n"
             f"It failed in {where}:\n{error.strip()}\n\nExplain the cause in one or two sentences, then return the "
             "complete corrected script in one ```featurescript block. Keep feature names of unchanged features.")
+
+
+def edit_prompt(code: str, change: str, original_request: str | None = None) -> str:
+    parts = []
+    if original_request and original_request.strip():
+        parts.append(f"Original design request:\n{original_request.strip()}")
+    parts.append(f"Here is a working script:\n```featurescript\n{code.strip()}\n```")
+    parts.append(f"Apply this change:\n{change.strip()}")
+    parts.append("Return the complete changed script in one ```featurescript block. Keep the feature names, the "
+                 "variable names and everything the change does not affect exactly as it is. Start the answer with "
+                 "a short `Assumptions:` bullet list of what you changed and any choice you made.")
+    return "\n\n".join(parts)
 
 
 def review_prompt(request: str, code: str, report: str, not_built: list[str] | None = None,

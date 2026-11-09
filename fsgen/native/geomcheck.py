@@ -229,3 +229,51 @@ def thin_wall_report(items: list[ThinWall], min_mm=1.2, top=8) -> str:
     if len(items) > top:
         lines.append(f"  ... and {len(items) - top} more")
     return "\n".join(lines)
+
+
+# ------------------------------------------------------------------ overlapping color bodies
+@dataclass
+class Overlap:
+    a: int            # 1-based part numbers, as in the geometry check
+    b: int
+    name_a: str | None
+    name_b: str | None
+    volume_mm3: float
+
+
+def overlaps(bodies, min_mm3=0.001) -> list[Overlap]:
+    """Pairs of solids whose volumes overlap (touching is fine). Only for multicolor builds: more than one solid
+    and at least one with a name set; otherwise []. `bodies` have .shape (meters) and .name. A bounding-box
+    prefilter keeps it cheap for many solids."""
+    from .fit import FitError, overlap
+
+    if len(bodies) < 2 or not any(b.name for b in bodies):
+        return []
+    boxes = [G.bbox([b.shape]) for b in bodies]
+    out = []
+    for i in range(len(bodies)):
+        for j in range(i + 1, len(bodies)):
+            (alo, ahi), (blo, bhi) = boxes[i], boxes[j]
+            if np.any(alo > bhi + 1e-6) or np.any(blo > ahi + 1e-6):
+                continue
+            try:
+                v = overlap(bodies[i].shape, bodies[j].shape) * 1e9
+            except FitError:
+                continue
+            if v > min_mm3:
+                out.append(Overlap(i + 1, j + 1, bodies[i].name, bodies[j].name, v))
+    return sorted(out, key=lambda o: -o.volume_mm3)
+
+
+def overlap_report(items: list[Overlap], top=8) -> str:
+    if not items:
+        return ""
+    def label(n, name):
+        return f"part {n}" + (f" ({name})" if name else "")
+    lines = [f"overlap check: {len(items)} pair(s) of solids overlap (multicolor bodies may touch but must not overlap; "
+             "the slicer would print the shared volume twice):"]
+    for o in items[:top]:
+        lines.append(f"  {o.volume_mm3:9.3f} mm3  {label(o.a, o.name_a)} / {label(o.b, o.name_b)}")
+    if len(items) > top:
+        lines.append(f"  ... and {len(items) - top} more")
+    return "\n".join(lines)

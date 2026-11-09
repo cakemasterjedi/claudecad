@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -162,6 +163,8 @@ class TraceResult:
     error: str | None = None
     error_line: int = 0
     output: list[str] = field(default_factory=list)
+    # setProperty calls: (index of the next feature when it was called, entities QText, property name, value, line)
+    properties: list[tuple] = field(default_factory=list)
 
 
 # ------------------------------------------------------------------ tracer
@@ -171,6 +174,7 @@ class Tracer:
         self.variables_mode = variables_mode  # "studio": one Variable Studio; "tree": Variable features
         self.variable_list: list[dict] = []
         self.features: list[FeatureRec] = []
+        self.properties: list[tuple] = []
         self.names: set[str] = set(DEFAULT_FEATURES)
         self.current_line = 0
         self._install()
@@ -412,6 +416,20 @@ class Tracer:
                 raise FSError(f"skSolve: sketch \"{sk.name}\" is empty")
             sk.solved = True
 
+        @fn("setProperty")
+        def _set_property(ctx, m):
+            """Part name / appearance: not a feature, recorded and applied by the local build (not pushed)."""
+            if not isinstance(m, dict):
+                raise FSError("setProperty: second argument must be a definition map")
+            ptype = m.get("propertyType")
+            if not isinstance(ptype, EnumVal) or ptype.enum != "PropertyType":
+                raise FSError("setProperty: \"propertyType\" must be a PropertyType value (e.g. PropertyType.NAME)")
+            if not isinstance(m.get("entities"), QText):
+                raise FSError("setProperty: \"entities\" must be a query")
+            if m.get("value") is None:
+                raise FSError("setProperty: missing \"value\"")
+            tr.properties.append((len(tr.features), m["entities"], ptype.name, m["value"], tr.current_line))
+
         # standard features
         def make_feature_fn(ft):
             spec = SPECS[ft]["params"]
@@ -476,6 +494,7 @@ class Tracer:
         except (FSError, FSSyntaxError) as e:
             res.error, res.error_line = str(e), getattr(e, "line", 0)
         res.features = self.features
+        res.properties = self.properties
         res.variable_list = self.variable_list
         res.variables = dict(self.interp.variables)
         res.output = self.interp.output
@@ -554,6 +573,105 @@ def _check_param(ft, key, spec, v):
     elif t == "FeatureList":
         if not isinstance(v, list) or not all(isinstance(x, Id) for x in v):
             raise FSError(f"{where} must be an array of feature ids like [id + \"Boss\", id + \"Hole\"]")
+
+
+_VALUE_OK = frozenset("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_ .+-*/()")
+
+
+def _skip_lexical(src: str, i: int) -> int:
+    """If a comment or string literal starts at i, return the index just past it; otherwise i."""
+    if src.startswith("//", i):
+        j = src.find("\n", i)
+        return len(src) if j < 0 else j
+    if src.startswith("/*", i):
+        j = src.find("*/", i + 2)
+        return len(src) if j < 0 else j + 2
+    if src[i] in "\"'":
+        q, j = src[i], i + 1
+        while j < len(src) and src[j] != q:
+            j += 2 if src[j] == "\\" else 1
+        return min(j + 1, len(src))
+    return i
+
+
+def _call_args(src: str, i: int):
+    """Argument spans (start, end) of the call whose '(' is at src[i]; None if unbalanced."""
+    spans, depth, start, j = [], 0, i + 1, i
+    while j < len(src):
+        k = _skip_lexical(src, j)
+        if k != j:
+            j = k
+            continue
+        c = src[j]
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+            if depth == 0:
+                spans.append((start, j))
+                return spans
+        elif c == "," and depth == 1:
+            spans.append((start, j))
+            start = j + 1
+        j += 1
+    return None
+
+
+_UNIT_WORDS = {"mm": "millimeter", "cm": "centimeter", "m": "meter", "in": "inch", "inches": "inch", "ft": "foot",
+               "deg": "degree", "degrees": "degree", "rad": "radian", "radians": "radian",
+               **{u: u for u in ("millimeter", "centimeter", "meter", "inch", "foot", "yard", "degree", "radian")}}
+_PLAIN_VALUE = re.compile(r"\s*([-+]?(?:\d+\.?\d*|\.\d+))\s*([A-Za-z]+)\s*")
+
+
+def _fs_value(v: str) -> str:
+    """'10 mm' (the form the tracer reports and people type) -> '10 * millimeter'; anything else unchanged."""
+    m = _PLAIN_VALUE.fullmatch(v)
+    if m and m.group(2).lower() in _UNIT_WORDS:
+        return f"{m.group(1)} * {_UNIT_WORDS[m.group(2).lower()]}"
+    return v
+
+
+def set_variables(src: str, values: dict[str, str]) -> str:
+    """Rewrite the value (3rd) argument of `variable(context, "NAME", value[, desc])` calls. Nothing else changes."""
+    for name, v in values.items():
+        if not isinstance(v, str) or not v.strip():
+            raise ValueError(f"variable {name}: value must be a non-empty string")
+        if len(v) > 60 or any(c not in _VALUE_OK for c in v):
+            raise ValueError(f"variable {name}: value must be at most 60 characters of letters, digits, spaces and _ . + - * / ( )")
+    values = {name: _fs_value(v) for name, v in values.items()}
+    found: dict[str, list[tuple[int, int]]] = {}
+    i = 0
+    while i < len(src):
+        k = _skip_lexical(src, i)
+        if k != i:
+            i = k
+            continue
+        if src.startswith("variable", i) and (i == 0 or not (src[i - 1].isalnum() or src[i - 1] in "_.")):
+            j = i + len("variable")
+            while j < len(src) and src[j].isspace():
+                j += 1
+            if j < len(src) and src[j] == "(":
+                spans = _call_args(src, j)
+                if spans and len(spans) >= 3:
+                    nm = src[spans[1][0]:spans[1][1]].strip()
+                    if len(nm) >= 2 and nm[0] == nm[-1] == '"' and nm[1:-1] in values:
+                        a, b = spans[2]
+                        seg = src[a:b]
+                        lead = len(seg) - len(seg.lstrip())
+                        found.setdefault(nm[1:-1], []).append((a + lead, a + len(seg.rstrip())))
+                i = j + 1
+                continue
+        i += 1
+    for name in values:
+        n = len(found.get(name, []))
+        if n == 0:
+            raise ValueError(f"variable {name} not found in the script")
+        if n > 1:
+            raise ValueError(f"variable {name} is declared {n} times in the script")
+    out = src
+    for name, [(a, b)] in sorted(found.items(), key=lambda kv: -kv[1][0][0]):
+        out = out[:a] + values[name].strip() + out[b:]
+    return out
 
 
 def trace(src: str, variables_mode: str | None = None) -> TraceResult:

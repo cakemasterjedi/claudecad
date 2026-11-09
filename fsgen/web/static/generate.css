@@ -95,3 +95,34 @@ main:has(.panel:not([hidden]) .gen) { max-width: 76rem; }
 .gen .gen-pushout { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2); margin: 0 0 var(--s3); overflow-wrap: anywhere; }
 .gen .gen-pushout:empty { display: none; }
 .gen .gen-pushout p { margin: 0; flex-basis: 100%; }
+
+/* questions and A/B variants */
+.ab-notes { display: grid; gap: var(--s2); margin: 0 0 var(--s3); }
+.gen .gen-question { margin: 0 0 var(--s3); }
+.gen .gen-question p { margin: 0 0 var(--s2); }
+.gen .gen-opts { display: flex; flex-wrap: wrap; gap: var(--s2); margin-bottom: var(--s2); }
+.gen .gen-opt[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-text); }
+.gen .mquestions { margin-top: var(--s2); }
+.gen .gen-variants { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s3); }
+.gen .gen-variant { min-width: 0; padding: var(--s3); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+@media (max-width: 700px) { .gen .gen-variants { grid-template-columns: 1fr; } }
+
+/* recent jobs */
+.gen .gen-recent { margin-top: var(--s3); }
+.gen .gen-recent-list { list-style: none; margin: var(--s2) 0 0; padding: 0; display: grid; gap: var(--s2); }
+.gen .gen-recent-item { width: 100%; text-align: left; overflow-wrap: anywhere; }
+.gen .gen-recent-item[aria-current="true"] { background: var(--accent-soft); color: var(--accent-text); }
+
+/* revise + variables panel */
+.gen .gen-revise { margin: var(--s3) 0; }
+.gen .gen-revise textarea { width: 100%; margin-bottom: var(--s2); }
+.gen .gen-link { display: inline; padding: 0 var(--s1, .25rem); min-height: 0; }
+.gen .gen-vars { margin-top: var(--s3); }
+.gen .var-panel { display: grid; gap: var(--s2); margin-top: var(--s2); }
+.gen .var-list { display: grid; gap: var(--s2); }
+.gen .var-row { display: grid; grid-template-columns: minmax(6rem, 1fr) auto minmax(6rem, 1fr); gap: var(--s2); align-items: center; }
+.gen .var-name { font-weight: 600; overflow-wrap: anywhere; }
+.gen .var-type { font-size: .8rem; }
+.gen .var-desc { grid-column: 1 / -1; font-size: .85rem; }
+.gen .var-panel .row { display: flex; flex-wrap: wrap; gap: var(--s2); }
+.gen .var-panel .error { margin: 0; }

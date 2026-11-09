@@ -122,6 +122,10 @@ Evaluation: evVolume(context, {"entities" : q}), evArea, evLength, evBox3d(conte
 - Make cutting tools overshoot faces by ~1 mm so cuts are clean; avoid coincident/tangent faces in booleans.
 - Delete sketch bodies when done: opDeleteBodies(context, id + "cleanup", { "entities" : qCreatedBy(id + "sk", EntityType.BODY) }).
 - Unless asked for multiple parts, the result must be exactly one solid body.
+- Multicolor 3D printing (only when asked): one separate solid per color (do not union them), bodies must not overlap
+  (touching is fine). Name and color each body: setProperty(context, { "entities" : q, "propertyType" : PropertyType.NAME,
+  "value" : "Yellow" }) and ... PropertyType.APPEARANCE, "value" : color(1, 0.8, 0) (components 0..1, not 0..255).
+  Bodies with the same name are one color group.
 - Prefer small helper functions over copy-paste when repeating geometry; use loops for patterns.
 """
 

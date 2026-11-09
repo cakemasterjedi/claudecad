@@ -89,8 +89,9 @@ def render_png(res: RunResult, path: Path, title: str = "") -> Path | None:
 
     if not res.solids:
         return None
-    tris = []
+    tris, base = [], []  # base: per-triangle RGB of the body's appearance color, or None
     for b in res.solids:
+        n0 = len(tris)
         BRepMesh_IncrementalMesh(b.shape, 0.0002, False, 0.3, True)
         for f in G.subshapes(b.shape, G.TopAbs_FACE):
             loc = TopLoc_Location()
@@ -104,7 +105,9 @@ def render_png(res: RunResult, path: Path, title: str = "") -> Path | None:
             for i in range(1, tri.NbTriangles() + 1):
                 a, b_, c = tri.Triangle(i).Get()
                 tris.append(pts[[a - 1, c - 1, b_ - 1]] if rev else pts[[a - 1, b_ - 1, c - 1]])
+        base += [b.color[:3] if b.color else (0.55, 0.68, 0.85)] * (len(tris) - n0)
     tris = np.array(tris)
+    base = np.array(base, float)  # bodies without an appearance keep the default blue-grey
     lo, hi = tris.reshape(-1, 3).min(0), tris.reshape(-1, 3).max(0)
     ctr, span = (lo + hi) / 2, (hi - lo).max() / 2 * 1.05
     n = np.cross(tris[:, 1] - tris[:, 0], tris[:, 2] - tris[:, 0])
@@ -118,7 +121,7 @@ def render_png(res: RunResult, path: Path, title: str = "") -> Path | None:
         light = view * 0.8 + np.array([0.2, 0.1, 0.5])
         light /= np.linalg.norm(light)
         shade = 0.35 + 0.65 * np.clip(n @ light, 0, 1)
-        colors = np.stack([shade * 0.55, shade * 0.68, shade * 0.85, np.ones_like(shade)], 1)
+        colors = np.concatenate([shade[:, None] * base, np.ones((len(shade), 1))], 1)
         pc = Poly3DCollection(tris, facecolors=colors, edgecolor="none")
         ax.add_collection3d(pc)
         for i, axis in enumerate("xyz"):

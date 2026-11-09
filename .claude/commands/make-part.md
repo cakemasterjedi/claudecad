@@ -8,7 +8,14 @@ Make this part: $ARGUMENTS
 Follow the "Making a part" workflow in AGENTS.md:
 
 1. Run `.venv/bin/fsgen spec` and follow it (dialect, the user's rules, feature catalog, examples).
-2. If the request names a real product, look up its dimensions online first. List your assumptions (every
+2. Ask before designing when the request leaves a design-changing choice open (which style or version, which
+   real product, which of several plausible readings) and no sensible default settles it: ask 1-4 questions
+   with AskUserQuestion (2-4 options each; include an option "Make both (A and B)" when two readings are
+   equally likely). Don't ask about details you can reasonably assume; list those as assumptions instead.
+   If the user wants to choose between two versions, make both: `parts/<short-name>-a.fs` and
+   `parts/<short-name>-b.fs`, build each in step 3, and show both previews side by side with a one-line
+   difference each before asking which one to deliver.
+   If the request names a real product, look up its dimensions online first. List your assumptions (every
    dimension or interpretation the request doesn't state) and show them to the user before designing.
    Write the script to `parts/<short-name>.fs`. Briefly state the plan first: variables, sketch planes, feature order.
 3. Run `.venv/bin/fsgen studio build parts/<short-name>.fs`. Fix errors and warnings, then look at the

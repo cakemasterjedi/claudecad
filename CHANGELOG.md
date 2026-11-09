@@ -4,6 +4,19 @@
 
 ### Added
 
+- **`fsgen web` Change it**: describe a change to a generated part; the result is saved as `<name>-rev.fs` and the
+  original script is kept (the result shows a "Revision of" note).
+- **`fsgen web` Keep this one** (A/B runs): asks before deleting the other script, then renames the winner to the
+  base name.
+- **`fsgen web` Recent**: list of past Generate jobs (only jobs run after this feature; older runs have no job record).
+- **`fsgen web` Variables**: edit a script's top-level variables (units such as `10 mm` become `10 * millimeter`);
+  values that fail to build are never saved.
+- **`fsgen web` clarifying questions**: "Let the model ask questions first" (on by default) lets the model ask
+  questions about the prompt before generating.
+- **Part names and colors** (`setProperty` NAME / APPEARANCE): kept on bodies, used by the local build and export
+  (one 3MF object per name), overlap check for multicolor builds. Example: `examples/native/multicolor_tag.fs`.
+- **Multicolor emboss** (`fsgen/native/colorlayers.py`, `emboss.py`) and **`fsgen emboss ART.svg PART.fs`**: flat-color
+  SVG art as raised multicolor bodies on a flat face or a cylinder (0 Onshape calls).
 - **`fsgen web`**: LAN web UI (stdlib server, password login, CSRF header, security headers; plain HTTP, for trusted
   networks only). Tabs: **Parts** (edit, save, check in a worker process, 3D preview), **Generate** (prompt to
   part with a live log, paste mode, 0 Onshape calls, one job at a time), **Usage** (read-only API usage).

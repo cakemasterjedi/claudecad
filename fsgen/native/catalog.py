@@ -99,6 +99,8 @@ def prompt_section() -> str:
     out.append("Other Onshape features you may use when the design needs them (call them by featureType with "
                "Onshape parameter ids; the checker lists valid parameter ids and enum values if you get one wrong): "
                + ", ".join(other) + ".")
+    out.append("setProperty (NAME / APPEARANCE) names and colors parts for multicolor printing; it is not a feature "
+               "(see Multicolor parts above) and is not sent by the REST push.")
     fails = [(ft, e["failures"][-1]) for ft, e in cat.items() if e.get("failures") and e.get("status") != "learned"]
     if fails:
         out.append("Previous failures to avoid: " + "; ".join(f"{ft}: {msg}" for ft, msg in fails))

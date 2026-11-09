@@ -212,6 +212,7 @@
       if (r.report) sec.push(section("Report", pre(r.report), true));
       if (r.validity_text) sec.push(section("Validity", pre(r.validity_text), r.validity.some(v => !v.ok)));
       if (r.walls_text) sec.push(section(`Thin walls (${r.walls.length})`, pre(r.walls_text), false));
+      if (r.overlap_text) sec.push(section("Overlapping color bodies", pre(r.overlap_text), true));
       if (r.print_check) sec.push(section("Print check", pre(r.print_check), false));
       if (r.push_estimate) sec.push(el("p", {"class": "muted p-est"}, r.push_estimate));
       if (r.fit_error) sec.push(el("p", {"class": "error"}, "Fit file: " + r.fit_error));

@@ -209,6 +209,7 @@ Also: **STEP → editable tree** (`fsgen recognize part.step`) using
 | `fsgen studio view file.fs` | interactive 3D viewer (HTML): print layout and assembly | 0 |
 | `fsgen studio paste file.fs` | custom feature to paste (clipboard) | 0 |
 | `fsgen studio push file.fs [--document URL]` | create / update the native tree incrementally | as estimated |
+| `fsgen emboss art.svg file.fs [--plane top --offset MM --cylinder R]` | put flat-color SVG art on a script as raised multicolor bodies (`<file>_emboss.fs`) | 0 |
 | `fsgen recognize part.step` | STEP → editable Part Studio script | 0 |
 | `fsgen features [type]` | feature catalog / one feature's parameters | 0 |
 | `fsgen usage` | API calls used and left | 0 |

@@ -30,23 +30,24 @@ def check_timeout() -> float:
 
 # --- executed in the worker process -----------------------------------------------------------------------
 
-def run_check(path_str: str, min_wall: float = 1.2) -> dict:
+def run_check(path_str: str, min_wall: float = 1.2, source: str | None = None) -> dict:
     """Same work as `fsgen studio check` plus viewer scenes; 0 Onshape calls, writes no files."""
     with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-        return _run_check(Path(path_str), min_wall)
+        return _run_check(Path(path_str), min_wall, source)
 
 
-def _run_check(path: Path, min_wall: float) -> dict:
+def _run_check(path: Path, min_wall: float, source: str | None = None) -> dict:
     from ..native.script import trace
 
     t0 = time.monotonic()
     res: dict = {"ok": False, "stage": "script", "error": None, "features": [], "report": "", "print_check": "",
-                 "validity": [], "validity_text": "", "walls": [], "walls_text": "", "scenes": [], "seconds": 0.0}
+                 "validity": [], "validity_text": "", "walls": [], "walls_text": "", "overlap_text": "", "scenes": [], "variables": [], "seconds": 0.0}
     try:
-        tr = trace(path.read_text())
+        tr = trace(source if source is not None else path.read_text())
     except Exception as e:  # noqa: BLE001
         res["error"] = f"{type(e).__name__}: {e}"
         return res
+    res["variables"] = [dict(v) for v in tr.variable_list]
     res["features"] = [{"type": f.feature_type, "name": f.name} for f in tr.features]
     if not tr.ok:
         res["error"] = tr.error or "script error"
@@ -80,6 +81,7 @@ def _run_check(path: Path, min_wall: float) -> dict:
         res["validity_text"] = geomcheck.validity_report(checked)
         walls = geomcheck.thin_walls(solids, min_wall)
         res["walls_text"] = geomcheck.thin_wall_report(walls, min_wall)
+        res["overlap_text"] = geomcheck.overlap_report(geomcheck.overlaps(loc.run.solids))
         res["walls"] = [{"part": w.part, "min_mm": round(w.min_mm, 3), "area_mm2": round(w.area_mm2, 1),
                          "center_mm": [round(c, 2) for c in w.center_mm]} for w in walls[:MAX_WALLS]]
         _scenes(res, path, solids)
@@ -148,7 +150,7 @@ def _discard_pool() -> None:
         pass
 
 
-def check_in_worker(path: Path, min_wall: float = 1.2) -> dict:
+def check_in_worker(path: Path, min_wall: float = 1.2, source: str | None = None) -> dict:
     """Run a check in the worker. Raises CheckTimeout or CheckCrashed (the pool is recreated next time)."""
     global _pool
     timeout = check_timeout()
@@ -159,11 +161,11 @@ def check_in_worker(path: Path, min_wall: float = 1.2) -> dict:
             if _pool is None:
                 _pool = _new_pool()
             try:
-                fut = _pool.submit(run_check, str(path), min_wall)
+                fut = _pool.submit(run_check, str(path), min_wall, source)
             except (BrokenProcessPool, RuntimeError):  # already dead before we started: replace it, once
                 _discard_pool()
                 _pool = _new_pool()
-                fut = _pool.submit(run_check, str(path), min_wall)
+                fut = _pool.submit(run_check, str(path), min_wall, source)
             return fut.result(timeout=timeout)
         except FutureTimeout:
             _discard_pool()

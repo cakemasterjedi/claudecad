@@ -56,18 +56,82 @@ def cmd_run(args):
     return 0
 
 
+def _ask_answers(questions) -> list[dict]:
+    answers = []
+    for i, q in enumerate(questions, 1):
+        print(f"\n{i}. {q['text']}")
+        opts = q.get("options") or []
+        for j, o in enumerate(opts, 1):
+            print(f"   {j}) {o}")
+        raw = input("> ").strip()
+        if raw.isdigit() and 1 <= int(raw) <= len(opts):
+            raw = opts[int(raw) - 1]
+        answers.append({"question": q["text"], "answer": raw})
+    return answers
+
+
+def _generate_native_cli(args) -> int:
+    from .native.generate import generate_native
+    from .native.prompts import append_answers, variant_note
+
+    formats = tuple(f for f in (args.export or "").split(",") if f)
+    variants = list(args.variant or [])
+    if args.ab and not variants:
+        variants = ["", ""]
+
+    def run(request, out, name, ask, note):
+        return generate_native(request, out, name=name, paste=args.paste, backend=args.backend, model=args.model,
+                               max_fixes=args.max_fixes, review_rounds=0 if args.no_review else args.reviews,
+                               web=not args.no_web, llm_command=args.llm_command, document=args.document,
+                               export_formats=formats, budget=args.budget, ask=ask, variant_note=note)
+
+    def show(obj):
+        print(json.dumps(obj, indent=2, default=str))
+
+    def answer(res, request):
+        """The request with answers appended, or None when there is no terminal to ask on."""
+        if not sys.stdin.isatty():
+            show({k: v for k, v in res.items() if k != "history"})
+            return None
+        return append_answers(request, _ask_answers(res["questions"]))
+
+    out = Path(args.out) if args.out else None
+    if not variants:
+        res = run(args.request, out, args.name, args.ask, None)
+        if res.get("questions"):
+            request = answer(res, args.request)
+            if request is None:
+                return 2
+            res = run(request, out.with_name(out.name + "-answered") if out else None, args.name, False, None)
+        show({k: v for k, v in res.items() if k != "history"})
+        return 0 if res["ok"] else 1
+
+    request, results, ask = args.request, [], args.ask
+    labels = [chr(ord("A") + i) for i in range(len(variants))]
+    a_result = None
+    for label, text in zip(labels, variants):
+        note = variant_note(label, text, a_result.get("assumptions") if a_result else None)
+        out_l = out / label if out else None
+        name_l = f"{args.name}-{label}" if args.name else None
+        if ask and label == "A":
+            res = run(request, out / "questions" if out else None, name_l, True, note)
+            if res.get("questions"):
+                request = answer(res, request)
+                if request is None:
+                    return 2
+                res = run(request, out_l, name_l, False, note)
+        else:
+            res = run(request, out_l, name_l, False, note)
+        if label == "A":
+            a_result = res
+        results.append({"label": label, **{k: v for k, v in res.items() if k != "history"}})
+    show({"variants": results})
+    return 0 if all(r["ok"] for r in results) else 1
+
+
 def cmd_generate(args):
     if not args.custom:
-        from .native.generate import generate_native
-
-        res = generate_native(args.request, Path(args.out) if args.out else None, name=args.name, paste=args.paste,
-                              backend=args.backend, model=args.model, max_fixes=args.max_fixes,
-                              review_rounds=0 if args.no_review else args.reviews, web=not args.no_web,
-                              llm_command=args.llm_command, document=args.document,
-                              export_formats=tuple(f for f in (args.export or "").split(",") if f),
-                              budget=args.budget)
-        print(json.dumps({k: v for k, v in res.items() if k != "history"}, indent=2, default=str))
-        return 0 if res["ok"] else 1
+        return _generate_native_cli(args)
     from .generate import generate
 
     res = generate(args.request, Path(args.out) if args.out else None, backend=args.backend, model=args.model,
@@ -182,6 +246,9 @@ def cmd_studio(args):
     est, st0 = pushflow.estimate(tr, sname, args.document, fresh=args.fresh, metrics=args.metrics,
                                  exports=tuple(f for f in (args.export or "").split(",") if f))
     print(f"push to \"{sname}\" ({'new' if st0 is None else 'update'}): " + est.text())
+    if args.action in ("check", "build", "push"):
+        for w in est.warnings:
+            print("warning:", w)
     if args.action == "paste":
         return paste_command(path, tr, args)
     if args.action in ("fit", "view"):
@@ -200,6 +267,8 @@ def cmd_studio(args):
             valid = all(v.ok for v in checked)
             print(geomcheck.validity_report(checked))
             print(geomcheck.thin_wall_report(geomcheck.thin_walls(solids, args.min_wall), args.min_wall))
+            if ov := geomcheck.overlap_report(geomcheck.overlaps(loc.run.solids)):
+                print(ov)
         if args.action == "build" and loc.ok and not valid:
             print("not exporting: fix the geometry problems above first")
         if args.action == "build" and loc.ok and valid:
@@ -221,10 +290,18 @@ def cmd_studio(args):
                 except FitError as e:
                     spec = None
                     print(f"fit file {spec_path}: {e}")
-                names, note = part_names(bodies, spec, spec_path.parent)
+                names, note = part_names(bodies, spec, spec_path.parent, [b.name for b in loc.run.solids])
                 if note:
                     print(f"note: {note}")
-                files += export_parts(bodies, names, out, path.stem, tuple(formats))
+                seen: dict = {}
+                for n, b in zip(names, loc.run.solids):
+                    if b.color:
+                        seen.setdefault(n, set()).add(tuple(round(c, 3) for c in b.color))
+                for n, cols in seen.items():
+                    if len(cols) > 1:
+                        print(f"warning: parts named {n!r} have {len(cols)} different colors; they export as one 3MF "
+                              "object with the first color (rename one group to keep them apart)")
+                files += export_parts(bodies, names, out, path.stem, tuple(formats), [b.color for b in loc.run.solids])
             print("wrote", ", ".join(map(str, files)))
             from .outputs import open_in_freecad, to_dropbox
             if args.dropbox:
@@ -481,6 +558,65 @@ def cmd_compare(args):
     return 0 if all(r.get("match") for r in rows) else 1
 
 
+def _uv(text: str, what: str):
+    try:
+        u, v = (float(x) for x in text.split(","))
+    except ValueError:
+        raise SystemExit(f"{what}: expected U,V in mm, e.g. 0,0")
+    return (u, v)
+
+
+def cmd_emboss(args):
+    """Add flat-color SVG art to a native Part Studio script as raised multicolor bodies (0 Onshape calls)."""
+    from .native import colorlayers as cl
+    from .native import embossfile as ef
+
+    part = Path(args.part)
+    try:
+        o = ef.Options(
+            plane=args.plane, offset=args.offset, flip=args.flip, width=args.width, center=_uv(args.center, "--center"),
+            mirror=args.mirror, height=args.height, heights=ef.parse_pairs(args.heights, "--heights", True),
+            names={ef.norm_hex(k): v for k, v in ef.parse_pairs(args.names, "--names").items()},
+            min_width=args.min_width, skip=args.skip_color or [], cylinder=args.cylinder, axis_plane=args.axis_plane,
+            axis_center=_uv(args.axis_center, "--axis-center"), standoff=args.standoff, depth_in=args.depth_in,
+            span=args.span, span_side=args.span_side, base_name=args.base_name, base_color=args.base_color,
+            prefix=args.name)
+        if args.cylinder is not None and args.flip:
+            raise ef.EmbossError("--flip is for flat placement; with --cylinder the side comes from the sign of --offset")
+        if args.cylinder is not None and args.cylinder <= 0:
+            raise ef.EmbossError("--cylinder RADIUS must be positive")
+        if args.base_color and not args.base_name:
+            raise ef.EmbossError("--base-color needs --base-name")
+        out, rep = ef.apply(part.read_text(), args.art, o)
+    except (ef.EmbossError, ValueError, OSError) as e:
+        print(f"emboss: {e}")
+        return 1
+    dest = Path(args.output) if args.output else part.with_name(f"{part.stem}_emboss.fs")
+    dest.write_text(out)
+    print(f"color groups in {args.art}:")
+    for name, hx, area in rep["found"]:
+        skipped = " (skipped)" if hx.lower() in {ef.norm_hex(h) for h in o.skip} else ""
+        print(f"  {name:10s} {hx}  {area:8.2f} mm2{skipped}")
+    if o.min_width > 0:
+        print(f"widening to >= {o.min_width:g} mm: thin bands {len(rep['before'])} -> {len(rep['after'])}, "
+              f"absorbed {len(rep['absorbed'])}, dropped pieces {len(rep['dropped'])}")
+        for f, t, lbl, a in rep["absorbed"]:
+            print(f"  absorbed {lbl}: {f} band {a:.3f} mm2 -> {t}")
+        for t in rep["after"]:
+            print(f"  STILL THIN {t.label} {t.name}: {t.width:.2f} mm, area {t.area:.2f} mm2, bbox {t.bbox}")
+    print("embossed layers:")
+    for name, hx, area, h in rep["groups"]:
+        print(f"  {name:10s} {hx}  {area:8.2f} mm2  height {h:g} mm")
+    b = rep["bounds"]
+    where = (f"cylinder R={args.cylinder:g} (apex at {args.offset:g} mm from the {args.plane} plane)" if args.cylinder is not None
+             else f"{args.plane} plane" + (f" + {args.offset:g} mm" if args.offset else ""))
+    print(f"placement on {where}: u {b[0]:.2f}..{b[2]:.2f}, v {b[1]:.2f}..{b[3]:.2f} mm "
+          f"({b[2] - b[0]:.2f} x {b[3] - b[1]:.2f})")
+    print(f"wrote {dest}")
+    print(f"next: fsgen studio build {dest} --formats step,stl,3mf")
+    return 0
+
+
 def cmd_watch(args):
     from .watch import watch
 
@@ -513,6 +649,12 @@ def main(argv=None):
     g.add_argument("--paste", action="store_true", help="no Onshape calls: write a custom feature to paste "
                                                          "into a Feature Studio instead of pushing a native tree")
     g.add_argument("--budget", type=int, help="max Onshape API calls for this run (default ONSHAPE_RUN_BUDGET)")
+    g.add_argument("--ask", action="store_true",
+                   help="let the model ask clarifying questions first (asked on the terminal; exit 2 with the "
+                        "questions as JSON when stdin is not a terminal)")
+    g.add_argument("--variant", action="append", metavar="TEXT",
+                   help="make a version of the part following this note; repeat to make several (A, B, ...) and compare")
+    g.add_argument("--ab", action="store_true", help="make two versions (A and B) without notes and compare them")
     g.add_argument("--custom", action="store_true",
                    help="old mode: one custom feature (FS-Lite) instead of a native feature tree")
     g.set_defaults(fn=cmd_generate)
@@ -559,6 +701,42 @@ def main(argv=None):
         if name == "watch":
             p.add_argument("--port", type=int, default=8765)
         p.set_defaults(fn=fn)
+
+    em = sub.add_parser("emboss", help="put flat-color SVG art on a native Part Studio script as raised multicolor "
+                                       "bodies (0 Onshape calls)")
+    em.add_argument("art", metavar="ART.svg", help="flat-color SVG (filled shapes; text must be converted to paths)")
+    em.add_argument("part", metavar="PART.fs", help="native Part Studio script with a build function; not overwritten "
+                                                    "unless -o PART.fs")
+    em.add_argument("-o", "--output", metavar="OUT.fs", help="default: <PART>_emboss.fs next to PART.fs")
+    em.add_argument("--plane", choices=["top", "front", "right"], default="top",
+                    help="placement plane; art u,v = the plane's sketch x,y, seen from its normal side "
+                         "(Top: u=X v=Y; Front: u=X v=Z; Right: u=Y v=Z). Default top")
+    em.add_argument("--offset", type=float, default=0.0, metavar="MM",
+                    help="plane offset along its normal (flat: where the art stands; with --cylinder: signed distance "
+                         "of the cylinder's apex line from the plane)")
+    em.add_argument("--flip", action="store_true", help="extrude against the plane normal (faces that look the other way)")
+    em.add_argument("--width", type=float, metavar="MM", help="scale the art to this width (default: SVG size)")
+    em.add_argument("--center", default="0,0", metavar="U,V", help="art center in plane sketch coordinates, mm")
+    em.add_argument("--mirror", action="store_true", help="mirror in u (planes seen from behind)")
+    em.add_argument("--height", type=float, default=0.6, metavar="MM", help="height of every color (default 0.6)")
+    em.add_argument("--heights", metavar="NAME=MM,...", help="per color name height overrides, e.g. Black=0.4,Gold=0.8")
+    em.add_argument("--names", metavar="HEX=NAME,...", help="color names, e.g. '#f5d90a=Gold' (else the nearest common name)")
+    em.add_argument("--min-width", type=float, default=0.45, metavar="MM",
+                    help="widen color bands thinner than this (default 0.45; 0 disables)")
+    em.add_argument("--skip-color", action="append", metavar="HEX", help="drop this color (repeatable), e.g. a white background")
+    em.add_argument("--cylinder", type=float, metavar="RADIUS", help="art on a convex barrel face of this radius (mm)")
+    em.add_argument("--axis-plane", choices=["top", "front", "right"], default="top",
+                    help="with --cylinder: default plane perpendicular to the cylinder axis (default top = vertical axis)")
+    em.add_argument("--axis-center", default="0,0", metavar="U,V", help="cylinder axis position in --axis-plane coordinates, mm")
+    em.add_argument("--standoff", type=float, default=1.5, metavar="MM", help="cylinder: sketch plane distance outside the apex")
+    em.add_argument("--depth-in", type=float, default=3.0, metavar="MM", help="cylinder: how far the prisms reach past the apex into the base")
+    em.add_argument("--span", type=float, default=200.0, metavar="MM", help="cylinder: trim extent along the axis (default 200)")
+    em.add_argument("--span-side", choices=["both", "normal", "opposite"], default="both",
+                    help="cylinder: trim extrudes from --axis-plane both ways (default), along its normal, or against it")
+    em.add_argument("--base-name", metavar="NAME", help="name the existing bodies (3MF object / filament)")
+    em.add_argument("--base-color", metavar="HEX", help="color of the existing bodies (with --base-name)")
+    em.add_argument("--name", default="Emboss", metavar="PREFIX", help="feature id prefix (default Emboss; made unique)")
+    em.set_defaults(fn=cmd_emboss)
 
     rc = sub.add_parser("recognize", help="STEP -> editable Part Studio script (featuretree), 0 calls")
     rc.add_argument("step")
