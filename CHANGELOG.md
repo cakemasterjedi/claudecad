@@ -11,6 +11,8 @@
 
 ### Added
 
+- **`scriptforge web` Download STL**: download the STL the local build already made (`?what=stl`), with no
+  Onshape push and 0 Onshape calls.
 - **`fsgen web` Change it**: describe a change to a generated part; the result is saved as `<name>-rev.fs` and the
   original script is kept (the result shows a "Revision of" note).
 - **`fsgen web` Keep this one** (A/B runs): asks before deleting the other script, then renames the winner to the
