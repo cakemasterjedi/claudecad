@@ -13,9 +13,9 @@ POST /api/generate/{id}/keep     {variant: "A"|"B"} -> the job; the winner's scr
 POST /api/generate/{id}/revise   {change (1..2000 chars), variant?} -> {"id"}: a new job (parent = this one, name <name>-rev) that
                                  applies the change to the CURRENT saved script (409 if busy, like /api/generate)
 GET  /api/generate/{id}/events   -> SSE: `log` {i, text} (from ?from=N), then `done` {status, result}
-GET  /api/generate/{id}/download?what=script|zip[&variant=A]   (variant is required for a job with variants; same for
+GET  /api/generate/{id}/download?what=script|stl|zip[&variant=A]   (variant is required for a job with variants; same for
                                  estimate (?variant=) and push (body {"variant"}))
-                                 -> the saved .fs, or a zip of the working files without the LLM logs (also for failed jobs)
+                                 -> the saved .fs, the locally built STL (part_local.stl, 0 Onshape calls), or a zip of the working files without the LLM logs (also for failed jobs)
 GET  /api/generate/{id}/estimate -> {calls, text, mode, used, left, budget}: push estimate, 0 Onshape calls
 POST /api/generate/{id}/push     -> push the saved script to Onshape (one at a time; refused over the run budget or the
                                  allocation left) -> {ok, url, built, reused, warnings, error, api_calls}
@@ -572,14 +572,19 @@ def download(req):
     if what == "script":
         p = _script_path(req, result)
         return Download(p.read_bytes(), f"{name}.fs", "text/plain; charset=utf-8")
-    if what != "zip":
-        raise HTTPError(400, "what must be script or zip")
+    if what not in ("zip", "stl"):
+        raise HTTPError(400, "what must be script, stl or zip")
     rel = result.get("out_dir")
     if not rel:
         raise HTTPError(404, "no working files for this job")
     out = resolve_in_root(req.app.root, rel, suffixes=None)
     if not out.is_dir():
         raise HTTPError(404, "the working files are gone")
+    if what == "stl":  # the mesh the local build already saved: no rebuild, no Onshape calls
+        stl = out / "part_local.stl"
+        if not stl.is_file():
+            raise HTTPError(404, "no STL was built for this job (the part did not build locally)")
+        return Download(stl.read_bytes(), f"{name}.stl", "model/stl")
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         for f in sorted(out.rglob("*")):

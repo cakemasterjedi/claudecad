@@ -448,6 +448,7 @@
       }
       if (jobId && (r.script || r.out_dir)) {
         const acts = [];
+        if (r.script) acts.push(el("button", {type: "button", onclick: () => startDownload(jobId, "stl", label)}, "Download STL"));
         if (r.script) acts.push(el("button", {type: "button", "class": "ghost", onclick: () => startDownload(jobId, "script", label)}, "Download .fs"));
         acts.push(el("button", {type: "button", "class": "ghost", onclick: () => startDownload(jobId, "zip", label)}, "Download all (.zip)"));
         const pushKids = r.script ? pushBlock(jobId, jobName + (label ? "-" + label : ""), label) : [];

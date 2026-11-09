@@ -258,6 +258,23 @@ def test_download_script_and_zip(web, monkeypatch):
     assert call(web, "GET", f"/api/generate/{jid}/download", cookie=False)[0] == 401
 
 
+def test_download_stl_makes_no_onshape_calls(web, monkeypatch):
+    import scriptforge.onshape as osh
+    jid, res = finished_job(web, monkeypatch)
+    out = web.root / res["out_dir"]
+    (out / "part_local.stl").write_bytes(b"solid x\nendsolid x\n")
+    monkeypatch.setattr(osh.Onshape, "__init__", lambda *a, **k: (_ for _ in ()).throw(AssertionError("onshape")))
+    c = http.client.HTTPConnection("127.0.0.1", web.port, timeout=30)
+    c.request("GET", f"/api/generate/{jid}/download?what=stl", headers={"Cookie": f"scriptforge_session={web._tok}"})
+    r = c.getresponse()
+    body = r.read()
+    assert r.status == 200 and r.getheader("Content-Disposition") == 'attachment; filename="Mount.stl"'
+    assert body == b"solid x\nendsolid x\n"
+    (out / "part_local.stl").unlink()
+    s, d = call(web, "GET", f"/api/generate/{jid}/download?what=stl")
+    assert s == 404
+
+
 def test_download_failed_running_and_no_script(web):
     import scriptforge.web.generate_api as g
     out = web.root / "out/web/x-bad"
