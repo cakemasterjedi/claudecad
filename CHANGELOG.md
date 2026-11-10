@@ -4,6 +4,11 @@
 
 ### Changed
 
+- **Workbench model detail redesign**: one Export button opens a menu (a bottom sheet on a phone) with STL, STEP,
+  FeatureScript and zip; Push to Onshape (with its call estimate) is the one primary button. A/B versions are a segmented
+  control on the viewer with Keep in a strip under it. "Ask for a change" is a docked composer (Enter sends, optional
+  voice input). Variables show readable names with the code name underneath and a unit chip, preview automatically
+  after a short pause, and show Save/Reset only when a value changed.
 - **Project renamed to ScriptForge** (was `fsgen`): Python package `scriptforge`, CLI `scriptforge` (`fsgen` stays as an
   alias), environment variables `SCRIPTFORGE_*` with the old `FSGEN_*` names as fallback, state files
   (`.fsgen_api_ledger.jsonl`, `.fsgen_workspace.json`, `.fsgen_native.json`) are renamed to `.scriptforge_*` automatically

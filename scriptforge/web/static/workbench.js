@@ -26,29 +26,49 @@
       el("label", {"class": "wb-search"}, el("span", {}, "Search models"), search), items);
 
     const view = el("div", {"class": "wb-canvas"});
-    const chips = el("div", {"class": "wb-chips", role: "group", "aria-label": "Version"});
+    const chips = el("div", {"class": "wb-seg", role: "group", "aria-label": "Version"});
     const stats = el("div", {"class": "wb-stats", "aria-live": "polite"});
     const msg = el("div", {"class": "wb-msg", role: "status", hidden: ""});
     const stage = el("div", {"class": "wb-stage"}, view, msg, chips, stats);
+    const keepBar = el("div", {"class": "wb-keepbar", hidden: ""});
 
-    const dlStl = el("button", {type: "button"}, "Download STL");
-    const dlStep = el("button", {type: "button", "class": "ghost"}, "STEP");
-    const dlFs = el("button", {type: "button", "class": "ghost"}, ".fs");
-    const dlZip = el("button", {type: "button", "class": "ghost"}, "Zip");
-    const pushBtn = el("button", {type: "button", "class": "ghost wb-push"}, "Push to Onshape");
-    const actions = el("div", {"class": "wb-actions"}, dlStl, dlStep, dlFs, dlZip, pushBtn);
+    // Export: one button that opens a sheet (phone) or menu (wide) with every download
+    const item = (label, sub) => el("button", {type: "button", role: "menuitem", "class": "wb-xitem"},
+      el("b", {}, label), el("span", {"class": "muted"}, sub));
+    const dlStl = item("STL", "Mesh for your slicer");
+    const dlStep = item("STEP", "For other CAD tools");
+    const dlFs = item("FeatureScript (.fs)", "The script itself");
+    const dlZip = item("Everything (.zip)", "Script, mesh and working files");
+    const exportMenu = el("div", {"class": "wb-xmenu", role: "menu", "aria-label": "Export", hidden: ""},
+      el("p", {"class": "wb-xtitle"}, "Export"), dlStl, dlStep, dlFs, dlZip);
+    const exportBtn = el("button", {type: "button", "class": "ghost wb-export", "aria-haspopup": "menu", "aria-expanded": "false"}, "Export");
+    const pushBtn = el("button", {type: "button", "class": "wb-push"}, "Push to Onshape");
+    const actions = el("div", {"class": "wb-actions"}, el("div", {"class": "wb-xwrap"}, exportBtn, exportMenu), pushBtn);
     const out = el("div", {"class": "wb-out", role: "status", "aria-live": "polite"});
 
-    const change = el("textarea", {rows: "2", maxlength: "2000", "aria-label": "Change it",
-      placeholder: "Make the holes 4 mm and add a 1 mm chamfer on the top edge"});
-    const reviseBtn = el("button", {type: "button", "class": "wb-revise-btn"}, "Revise");
+    // "Ask for a change": a docked composer; Enter sends, Shift+Enter adds a line
+    const change = el("textarea", {rows: "1", maxlength: "2000", "aria-label": "Ask for a change",
+      placeholder: "Ask for a change\u2026 e.g. make the holes 4 mm"});
+    const icon = d => {  // small stroke icon (no inline style; CSP-safe)
+      const ns = "http://www.w3.org/2000/svg", svg = document.createElementNS(ns, "svg"), path = document.createElementNS(ns, "path");
+      for (const [k, v] of [["viewBox", "0 0 24 24"], ["width", "20"], ["height", "20"], ["fill", "none"], ["stroke", "currentColor"],
+        ["stroke-width", "2"], ["stroke-linecap", "round"], ["stroke-linejoin", "round"], ["aria-hidden", "true"]]) svg.setAttribute(k, v);
+      path.setAttribute("d", d); svg.append(path); return svg;
+    };
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const micBtn = el("button", {type: "button", "class": "wb-icon wb-mic", "aria-label": "Speak the change", title: "Speak the change"},
+      icon("M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3"));
+    if (!SR) micBtn.hidden = true;
+    const reviseBtn = el("button", {type: "button", "class": "wb-icon wb-revise-btn", "aria-label": "Send change", title: "Send change"},
+      icon("M12 19V5M5 12l7-7 7 7"));
     const reviseErr = el("p", {"class": "error", role: "alert"});
     const revise = el("div", {"class": "wb-revise"},
-      el("label", {"class": "wb-revise-label"}, el("span", {}, "Change it"), change), reviseBtn, reviseErr);
+      el("div", {"class": "wb-compose"}, change, micBtn, reviseBtn), reviseErr);
+    const dock = el("div", {"class": "wb-dock"}, out, revise, actions);
     const pickName = el("span", {"class": "wb-pick-name"}, "Choose a model");
     const pick = el("button", {type: "button", "class": "wb-pick", "aria-expanded": "false"},
       el("span", {"class": "wb-pick-label"}, "Models"), pickName);
-    const mainPane = el("section", {"class": "wb-main"}, pick, stage, actions, out, revise);
+    const mainPane = el("section", {"class": "wb-main"}, pick, stage, keepBar);
 
     const varBody = el("div", {"class": "wb-varbody"});
     const promptBody = el("p", {"class": "wb-prompt"});
@@ -67,7 +87,7 @@
       assumeSec,
       logSec);
 
-    const wb = el("div", {"class": "wb list-open"}, listPane, mainPane, sidePane);
+    const wb = el("div", {"class": "wb list-open"}, listPane, mainPane, sidePane, dock);
     panel.append(wb);
     function showList(open) {  // phone only (CSS): the list replaces the model view while open
       wb.classList.toggle("list-open", open); pick.setAttribute("aria-expanded", String(open));
@@ -149,7 +169,8 @@
       }
     }
     function resetPane() {  // everything that depends on the shown model/version (not the log)
-      stats.textContent = ""; chips.replaceChildren(); out.replaceChildren(); reviseErr.textContent = "";
+      stats.textContent = ""; chips.replaceChildren(); keepBar.replaceChildren(); keepBar.hidden = true; out.replaceChildren(); reviseErr.textContent = "";
+      openExport(false);
       varBody.replaceChildren(); editLink.hidden = true;
       for (const b of [dlStl, dlStep, dlFs, dlZip, pushBtn, reviseBtn]) b.disabled = true;
       pushBtn.textContent = "Push to Onshape";
@@ -177,7 +198,7 @@
       }
       showMesh(seq, job, label, res);
     }
-    function renderChips(job, variants) {
+    function renderChips(job, variants) {  // A | B segmented control on the viewer; keep lives in the strip under it
       const kids = [];
       for (const v of variants) {
         const kept = job.kept && job.kept.variant === v.label;
@@ -186,11 +207,13 @@
         if (job.kept && !kept) attrs.disabled = "";
         kids.push(el("button", attrs, v.label + (kept ? " \u00b7 kept" : "")));
       }
-      const cur = variants.find(v => v.label === st.variant);
-      if (variants.length && !job.kept && job.status === "done" && cur && cur.ok && cur.script) {
-        kids.push(el("button", {type: "button", "class": "wb-chip keep", onclick: () => keep(cur.label)}, "Keep " + cur.label));
-      }
       chips.replaceChildren(...kids);
+      chips.hidden = !variants.length;
+      const cur = variants.find(v => v.label === st.variant);
+      const canKeep = variants.length > 1 && !job.kept && job.status === "done" && cur && cur.ok && cur.script;
+      keepBar.replaceChildren(...(canKeep ? [el("span", {"class": "muted"}, `Comparing ${variants.map(v => v.label).join(" and ")}.`),
+        el("button", {type: "button", "class": "ghost wb-keep", onclick: () => keep(cur.label)}, "Keep " + cur.label)] : []));
+      keepBar.hidden = !canKeep;
     }
     function switchVariant(label) {  // same job, other version: no refetch of the job
       if (label === st.variant) return;
@@ -312,6 +335,14 @@
         setTimeout(() => URL.revokeObjectURL(url), 10000);
       } catch (e) { note(el("span", {"class": "error"}, e.message)); }
     }
+    function openExport(open) {
+      exportMenu.hidden = !open; exportBtn.setAttribute("aria-expanded", String(open));
+      if (open) { const first = exportMenu.querySelector("button:not(:disabled)"); if (first) first.focus(); }
+    }
+    exportBtn.addEventListener("click", e => { e.stopPropagation(); openExport(exportMenu.hidden); });
+    document.addEventListener("click", e => { if (!exportMenu.hidden && !exportMenu.contains(e.target)) openExport(false); });
+    document.addEventListener("keydown", e => { if (e.key === "Escape" && !exportMenu.hidden) { openExport(false); exportBtn.focus(); } });
+    for (const b of [dlStl, dlStep, dlFs, dlZip]) b.addEventListener("click", () => openExport(false));
     dlStl.addEventListener("click", () => download("stl"));
     dlStep.addEventListener("click", () => download("step"));
     dlFs.addEventListener("click", () => download("script"));
@@ -326,6 +357,22 @@
         loadList(); setHash(); const seq = ++st.seq; resetPane(); renderDetail(seq);
       } catch (e) { note(el("span", {"class": "error"}, e.message)); }
     }
+    change.addEventListener("keydown", e => {
+      if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); if (!reviseBtn.disabled) reviseBtn.click(); }
+    });
+    change.addEventListener("input", () => { change.style.height = "auto"; change.style.height = Math.min(change.scrollHeight, 160) + "px"; });
+    if (SR) {
+      let rec = null;
+      micBtn.addEventListener("click", () => {
+        if (rec) { rec.stop(); return; }
+        rec = new SR(); rec.lang = navigator.language || "en-US"; rec.interimResults = false;
+        micBtn.classList.add("on"); micBtn.setAttribute("aria-pressed", "true");
+        rec.onresult = e => { const t = e.results[0][0].transcript; change.value = (change.value ? change.value + " " : "") + t; change.dispatchEvent(new Event("input")); change.focus(); };
+        rec.onerror = e => { reviseErr.textContent = e.error === "not-allowed" ? "Microphone access was blocked." : ""; };
+        rec.onend = () => { rec = null; micBtn.classList.remove("on"); micBtn.setAttribute("aria-pressed", "false"); };
+        rec.start();
+      });
+    }
     reviseBtn.addEventListener("click", async () => {
       const text = change.value.trim(), job = st.job, {label} = target();
       if (!text) { reviseErr.textContent = "Describe the change first."; return; }
@@ -334,7 +381,7 @@
         const body = {change: text};
         if (label) body.variant = label;
         const {id} = await api(`/api/generate/${encode(job.id)}/revise`, {method: "POST", body});
-        change.value = "";
+        change.value = ""; change.style.height = "";
         await loadList();
         choose(id, null);
       } catch (e) { reviseErr.textContent = e.message; reviseBtn.disabled = false; }
