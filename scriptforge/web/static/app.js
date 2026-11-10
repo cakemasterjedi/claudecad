@@ -17,6 +17,8 @@
      window.scriptforge.showTab(name)               -> switch to a tab (mounting it if needed).
      window.scriptforge.openScript(path)            -> set by parts.js: show the Scripts tab with that script open.
      window.scriptforge.openJob(id, variant)        -> show the Workbench with that generation selected (URL hash).
+     window.scriptforge.desktop                     -> true on a desktop browser >= 900px wide (not a phone/tablet); the Scan tab and the
+                                                 Workbench ScanRuler items exist only then.
      window.scriptforge.openInScan(url)             -> set by scan.js: show the Scan tab with ScanRuler at a /scanruler/... URL.
      window.scriptforge.uploadScan(file, onProgress) -> set by scan.js: PUT a scan to /api/scans; also listScans(), scanUrl(scan).
      Shared helpers (see the `ui` object below): history(), thumb(), dayGroups(), jobTags(), downloadUrl(),
@@ -222,7 +224,14 @@
   }
   function css(href) { if (!document.querySelector(`link[href="${href}"]`)) document.head.append(el("link", {rel: "stylesheet", href})); }
 
-  window.scriptforge = {api, sse, registerTab, el, showTab: select, openJob, css,
+  // ScanRuler is desktop-only. Phones and tablets (by user agent; iPadOS reports as a touch Mac) and narrow windows get
+  // no Scan tab or ScanRuler items. Pointer media queries are not used: headless and some desktop browsers misreport them.
+  const ua = navigator.userAgent || "";
+  const handheld = (navigator.userAgentData && navigator.userAgentData.mobile) || /Android|iPhone|iPad|iPod|Mobile|Tablet/i.test(ua)
+    || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  const desktop = !handheld && window.matchMedia("(min-width: 900px)").matches;
+
+  window.scriptforge = {api, sse, registerTab, el, showTab: select, openJob, css, desktop,
     ui: {history: history_, thumb, dayGroups, jobTags, jobVariant, hasModel, downloadUrl, startDownload, loadViewer, spinner, placeholder, clock, slug}};
 
   window.addEventListener("DOMContentLoaded", () => {

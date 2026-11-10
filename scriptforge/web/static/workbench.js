@@ -46,7 +46,8 @@
     const openSr = item("Open in ScanRuler", "The STL alone, to measure or inspect");
     const checkScan = item("Check against scan\u2026", "Compare this model with a 3D scan");
     const exportMenu = el("div", {"class": "wb-xmenu", role: "menu", "aria-label": "Export", hidden: ""},
-      el("p", {"class": "wb-xtitle"}, "Export"), dlStl, dlStep, dlFs, dlZip, openSr, checkScan);
+      el("p", {"class": "wb-xtitle"}, "Export"), dlStl, dlStep, dlFs, dlZip,
+      ...(window.scriptforge.desktop ? [openSr, checkScan] : []));  // ScanRuler items: desktop only
     const scanTitle = el("p", {"class": "wb-xtitle"}, "Check against scan");
     const scanList = el("div", {"class": "wb-xlist"});
     const scanFile = el("input", {type: "file", accept: window.scriptforge.scanAccept || ".ply,.obj,.stl,.3mf", "class": "scan-file",

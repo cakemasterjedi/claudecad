@@ -60,7 +60,7 @@
   window.scriptforge.scanUrl = scanUrl;
   window.scriptforge.scanAccept = ACCEPT;
 
-  registerTab("Scan", mount);
+  if (window.scriptforge.desktop) registerTab("Scan", mount);  // desktop only (see app.js)
 
   function mount(panel) {
     const st = {info: null, polling: null, listOpen: false, sendOpen: false, installedShown: null, latest: null};

@@ -23,7 +23,7 @@
   "Send to ScriptForge" chip offers "Revise <model>" (fills the change box), "New model from these measurements"
   (fills New part), or "Save to Scans". `scriptforge scanruler status|update` installs the newest `vX.Y.Z` release
   (built in staging, switched only after the build passes, one previous version kept); a daily systemd user timer is
-  in `deploy/systemd/`.
+  in `deploy/systemd/`. Desktop browsers only: phones, tablets and windows under 900px get no Scan tab or ScanRuler items.
 - **`scriptforge web` Workbench + Models UI**: a dark 3-pane Workbench (history, 3D view, variables/prompt/log) and a
   Models grid with thumbnails. On a phone: tabs in a bottom bar, the model list behind a Models button, and
   Prompt, Assumptions and Log folded until tapped.
