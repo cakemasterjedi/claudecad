@@ -11,6 +11,10 @@
   const num = n => (n >= 100 ? String(Math.round(n)) : n.toFixed(1).replace(/\.0$/, ""));
   const encode = encodeURIComponent;
 
+  // Prefill hook (used by the Scan tab). The text waits until the Workbench is mounted AND showing the requested job.
+  let pendingRevise = null, applyRevise = null;
+  window.scriptforge.prefillRevise = text => { pendingRevise = String(text || "").slice(0, 2000); if (applyRevise) applyRevise(); };
+
   function parseHash() {
     const p = (location.hash || "").replace(/^#/, "").split("/");
     return p[0] === "workbench" && p[1] ? {id: decodeURIComponent(p[1]), variant: p[2] ? decodeURIComponent(p[2]) : null} : {id: null, variant: null};
@@ -39,11 +43,18 @@
     const dlStep = item("STEP", "For other CAD tools");
     const dlFs = item("FeatureScript (.fs)", "The script itself");
     const dlZip = item("Everything (.zip)", "Script, mesh and working files");
+    const openSr = item("Open in ScanRuler", "The STL alone, to measure or inspect");
+    const checkScan = item("Check against scan\u2026", "Compare this model with a 3D scan");
     const exportMenu = el("div", {"class": "wb-xmenu", role: "menu", "aria-label": "Export", hidden: ""},
-      el("p", {"class": "wb-xtitle"}, "Export"), dlStl, dlStep, dlFs, dlZip);
+      el("p", {"class": "wb-xtitle"}, "Export"), dlStl, dlStep, dlFs, dlZip, openSr, checkScan);
+    const scanTitle = el("p", {"class": "wb-xtitle"}, "Check against scan");
+    const scanList = el("div", {"class": "wb-xlist"});
+    const scanFile = el("input", {type: "file", accept: window.scriptforge.scanAccept || ".ply,.obj,.stl,.3mf", "class": "scan-file",
+      "aria-label": "Upload scan file", tabindex: "-1"});
+    const scanMenu = el("div", {"class": "wb-xmenu", role: "menu", "aria-label": "Check against scan", hidden: ""}, scanTitle, scanList, scanFile);
     const exportBtn = el("button", {type: "button", "class": "ghost wb-export", "aria-haspopup": "menu", "aria-expanded": "false"}, "Export");
     const pushBtn = el("button", {type: "button", "class": "wb-push"}, "Push to Onshape");
-    const actions = el("div", {"class": "wb-actions"}, el("div", {"class": "wb-xwrap"}, exportBtn, exportMenu), pushBtn);
+    const actions = el("div", {"class": "wb-actions"}, el("div", {"class": "wb-xwrap"}, exportBtn, exportMenu, scanMenu), pushBtn);
     const out = el("div", {"class": "wb-out", role: "status", "aria-live": "polite"});
 
     // "Ask for a change": a docked composer; Enter sends, Shift+Enter adds a line
@@ -170,14 +181,20 @@
     }
     function resetPane() {  // everything that depends on the shown model/version (not the log)
       stats.textContent = ""; chips.replaceChildren(); keepBar.replaceChildren(); keepBar.hidden = true; out.replaceChildren(); reviseErr.textContent = "";
-      openExport(false);
+      openExport(false); openScanMenu(false);
       varBody.replaceChildren(); editLink.hidden = true;
-      for (const b of [dlStl, dlStep, dlFs, dlZip, pushBtn, reviseBtn]) b.disabled = true;
+      for (const b of [dlStl, dlStep, dlFs, dlZip, openSr, checkScan, pushBtn, reviseBtn]) b.disabled = true;
       pushBtn.textContent = "Push to Onshape";
       st.hasStl = false;
       setMsg("Loading\u2026");
     }
+    applyRevise = () => {
+      if (pendingRevise == null || !st.job || st.job.id !== parseHash().id) return;
+      change.value = pendingRevise; pendingRevise = null;
+      change.dispatchEvent(new Event("input")); change.focus();
+    };
     function renderDetail(seq) {
+      applyRevise();
       const job = st.job, {label, res, variants} = target();
       pickName.textContent = job.name + (label ? " \u00b7 " + label : "");
       promptBody.textContent = job.request || "(no prompt)";
@@ -260,7 +277,7 @@
         setMsg(viewer.failed ? "3D view needs three.js from a CDN and could not load it (offline?)." : "");
       }
       st.hasStl = true;
-      dlStl.disabled = dlStep.disabled = false;
+      dlStl.disabled = dlStep.disabled = openSr.disabled = checkScan.disabled = false;
       if (res.script) loadEstimate(seq, job, label);
       loadVariables(seq, res);
     }
@@ -342,7 +359,52 @@
     exportBtn.addEventListener("click", e => { e.stopPropagation(); openExport(exportMenu.hidden); });
     document.addEventListener("click", e => { if (!exportMenu.hidden && !exportMenu.contains(e.target)) openExport(false); });
     document.addEventListener("keydown", e => { if (e.key === "Escape" && !exportMenu.hidden) { openExport(false); exportBtn.focus(); } });
-    for (const b of [dlStl, dlStep, dlFs, dlZip]) b.addEventListener("click", () => openExport(false));
+    for (const b of [dlStl, dlStep, dlFs, dlZip, openSr, checkScan]) b.addEventListener("click", () => openExport(false));
+    // --- ScanRuler hand-offs: the STL alone, or checked against an uploaded scan (Deviation workspace)
+    const variantKey = () => target().label || "-";
+    const modelUrl = () => `/api/generate/${encode(st.job.id)}/model/${encode(variantKey())}/model.stl`;
+    const sr = () => window.scriptforge;
+    const jobCtx = () => ({jobId: st.job.id, variant: st.variant || null, name: st.job.name});
+    function openScanMenu(open) {
+      scanMenu.hidden = !open;
+      if (open) fillScanMenu();
+    }
+    function checkWith(scan) {
+      if (!st.job || !st.hasStl) return;
+      const url = `/api/scans/${encode(scan.id)}/check/${encode(st.job.id)}/${encode(variantKey())}/check.scanruler`;
+      openScanMenu(false);
+      sr().openInScan("/scanruler/?open=" + encode(url) + "&workspace=deviation", jobCtx());
+    }
+    async function fillScanMenu() {
+      const seq = ++scanSeq;
+      scanTitle.textContent = "Check against scan";
+      const upload = el("button", {type: "button", role: "menuitem", "class": "wb-xitem",
+        onclick: () => scanFile.click()}, el("b", {}, "Upload a scan\u2026"), el("span", {"class": "muted"}, "PLY, OBJ, STL or 3MF, up to 500 MB"));
+      scanList.replaceChildren(el("p", {"class": "muted wb-xnote"}, "Loading scans\u2026"));
+      let scans = [];
+      try { scans = await sr().listScans(); }
+      catch (e) { if (seq === scanSeq) scanList.replaceChildren(el("p", {"class": "error wb-xnote"}, "Could not load scans: " + e.message), upload); return; }
+      if (seq !== scanSeq) return;
+      const rows = scans.map(s => el("button", {type: "button", role: "menuitem", "class": "wb-xitem", onclick: () => checkWith(s)},
+        el("b", {}, s.name), el("span", {"class": "muted"}, `${(s.size / 1048576).toFixed(1)} MB \u00b7 ${s.uploaded ? new Date(s.uploaded * 1000).toLocaleDateString() : ""}`)));
+      scanList.replaceChildren(...rows, upload);
+      const first = scanList.querySelector("button"); if (first && document.activeElement === checkScan) first.focus();
+    }
+    let scanSeq = 0;
+    scanFile.addEventListener("change", async () => {
+      const f = scanFile.files[0]; scanFile.value = "";
+      if (!f) return;
+      scanList.replaceChildren(el("p", {"class": "muted wb-xnote", role: "status"}, "Uploading " + f.name + "\u2026 "), el("progress", {max: "1", value: "0", "class": "scan-progress"}));
+      const bar = scanList.querySelector("progress");
+      try { checkWith(await sr().uploadScan(f, p => { bar.value = p; })); }
+      catch (e) { scanList.replaceChildren(el("p", {"class": "error wb-xnote", role: "alert"}, e.message)); }
+    });
+    openSr.addEventListener("click", () => {
+      if (st.job && st.hasStl) sr().openInScan("/scanruler/?open=" + encode(modelUrl()) + "&workspace=elements", jobCtx());
+    });
+    checkScan.addEventListener("click", e => { e.stopPropagation(); openScanMenu(true); });
+    document.addEventListener("click", e => { if (!scanMenu.hidden && !scanMenu.contains(e.target)) openScanMenu(false); });
+    document.addEventListener("keydown", e => { if (e.key === "Escape" && !scanMenu.hidden) { openScanMenu(false); exportBtn.focus(); } });
     dlStl.addEventListener("click", () => download("stl"));
     dlStep.addEventListener("click", () => download("step"));
     dlFs.addEventListener("click", () => download("script"));

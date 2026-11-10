@@ -16,6 +16,14 @@
 
 ### Added
 
+- **Scan tab (ScanRuler)**: ScriptForge hosts ScanRuler at `/scanruler/` behind its login, in a Scan tab that keeps it
+  open across tab switches, with scan upload (PLY, OBJ, STL, 3MF, up to 500 MB) and a Scans list. In the Workbench,
+  Export → "Check against scan…" opens ScanRuler in Surface Deviation with the scan and the model loaded, and "Open in
+  ScanRuler" opens the model alone. Back the other way: when ScanRuler exports measurements (CSV) or a mesh, a
+  "Send to ScriptForge" chip offers "Revise <model>" (fills the change box), "New model from these measurements"
+  (fills New part), or "Save to Scans". `scriptforge scanruler status|update` installs the newest `vX.Y.Z` release
+  (built in staging, switched only after the build passes, one previous version kept); a daily systemd user timer is
+  in `deploy/systemd/`.
 - **`scriptforge web` Workbench + Models UI**: a dark 3-pane Workbench (history, 3D view, variables/prompt/log) and a
   Models grid with thumbnails. On a phone: tabs in a bottom bar, the model list behind a Models button, and
   Prompt, Assumptions and Log folded until tapped.

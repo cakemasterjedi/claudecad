@@ -1,0 +1,18 @@
+# Installs the newest ScanRuler release tag for `scriptforge web` (/scanruler/).
+# Install: cp deploy/systemd/scriptforge-scanruler-update.* ~/.config/systemd/user/
+#          systemctl --user daemon-reload && systemctl --user enable --now scriptforge-scanruler-update.timer
+# Assumes the checkout is ~/claudecad with its venv in .venv; edit the paths otherwise.
+[Unit]
+Description=Install the newest ScanRuler release for ScriptForge
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/claudecad
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=%h/claudecad/.venv/bin/scriptforge scanruler update
+# exit 2 = an update is already running (e.g. started from the Scan tab's Update button)
+SuccessExitStatus=2
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=45min

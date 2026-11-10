@@ -44,6 +44,15 @@
     return blob;
   }
 
+  // Prefill hook (used by the Scan tab); the text waits for the tab to be mounted.
+  let pendingGen = null, genBox = null;
+  function applyGen() {
+    if (pendingGen == null || !genBox) return;
+    genBox.value = pendingGen; pendingGen = null;
+    genBox.dispatchEvent(new Event("input")); genBox.focus();
+  }
+  window.scriptforge.prefillGenerate = text => { pendingGen = String(text || "").slice(0, 4000); applyGen(); };
+
   registerTab("New part", panel => {
     const request = el("textarea", {id: "gen-request", maxlength: "4000", rows: "5",
       placeholder: "e.g. A 80 x 50 x 6 mm mounting plate with four 5.5 mm holes 6 mm from the corners and 4 mm rounded corners"});
@@ -121,6 +130,7 @@
       el("p", {}, "Describe it in words, photos or sketches. Everything runs locally."))),
       el("div", {"class": "gen"}, form, el("div", {"class": "gen-side"}, empty, progress, resultCard)));
 
+    genBox = request; applyGen();
     let stream = null, timer = null, job = null, seen = 0;
     let running = false, measuring = false, mTimer = null;
     const imgs = [];  // {key, url, id, state: "up"|"ok"|"fail", err}

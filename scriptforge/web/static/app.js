@@ -11,20 +11,22 @@
                                                  ends and "error" on a failure.
      window.scriptforge.registerTab(name, mountFn, opts) -> adds a tab. mountFn(panelElement) runs once, when the tab is
                                                  first shown after login. opts: {onShow()} runs every time the tab is
-                                                 shown. Tab order: Workbench, Models, New part, Scripts, Usage (by the
+                                                 shown. Tab order: Workbench, Models, Scan, New part, Scripts, Usage (by the
                                                  `order` table below; unknown names go last).
      window.scriptforge.el(tag, attrs, ...children) -> small DOM builder (textContent only; no innerHTML, CSP forbids inline).
      window.scriptforge.showTab(name)               -> switch to a tab (mounting it if needed).
      window.scriptforge.openScript(path)            -> set by parts.js: show the Scripts tab with that script open.
      window.scriptforge.openJob(id, variant)        -> show the Workbench with that generation selected (URL hash).
+     window.scriptforge.openInScan(url)             -> set by scan.js: show the Scan tab with ScanRuler at a /scanruler/... URL.
+     window.scriptforge.uploadScan(file, onProgress) -> set by scan.js: PUT a scan to /api/scans; also listScans(), scanUrl(scan).
      Shared helpers (see the `ui` object below): history(), thumb(), dayGroups(), jobTags(), downloadUrl(),
      startDownload(), loadViewer(), spinner(), when().
 
-   Scripts load with `defer` in this order: app.js, variables.js, usage.js, parts.js, generate.js, workbench.js,
-   models.js. Never use inline <script> or style="" attributes (CSP); element.style from JS is fine. */
+   Scripts load with `defer` in this order: app.js, variables.js, usage.js, parts.js, generate.js, scan.js,
+   workbench.js, models.js. Never use inline <script> or style="" attributes (CSP); element.style from JS is fine. */
 (function () {
   "use strict";
-  const order = ["Workbench", "Models", "New part", "Scripts", "Usage"];
+  const order = ["Workbench", "Models", "Scan", "New part", "Scripts", "Usage"];
   const tabs = {};   // name -> {mount, onShow, panel, button, mounted}
   const slug = n => n.toLowerCase().replace(/\s+/g, "-");
   let current = null;

@@ -19,3 +19,6 @@ onshape_project_context.md
 .fsgen_workspace.json
 .fsgen_native.json
 .fsgen_api_ledger.jsonl
+
+# 3D scans uploaded through the web UI (private, large)
+scans/
