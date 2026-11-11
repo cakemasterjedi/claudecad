@@ -17,7 +17,7 @@ build-backend = "setuptools.build_meta"
 include = ["scriptforge*"]
 
 [tool.setuptools.package-data]
-"scriptforge.web" = ["static/*"]
+"scriptforge.web" = ["static/*", "scanruler_project.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

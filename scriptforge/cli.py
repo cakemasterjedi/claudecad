@@ -760,6 +760,10 @@ def main(argv=None):
     w.add_argument("--root", default=".", help="project folder to serve (default: current directory)")
     w.set_defaults(fn=cmd_web)
 
+    sr = sub.add_parser("scanruler", help="hosted ScanRuler: show status or install the newest release")
+    sr.add_argument("action", choices=["status", "update"])
+    sr.set_defaults(fn=lambda a: __import__("scriptforge.scanruler", fromlist=["x"]).cmd_scanruler(a))
+
     fe = sub.add_parser("features", help="feature catalog: verified / learned / available")
     fe.add_argument("feature", nargs="?", help="show one feature type with its settable parameters")
     fe.add_argument("--all", action="store_true")

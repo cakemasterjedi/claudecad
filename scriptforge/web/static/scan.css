@@ -1,0 +1,45 @@
+/* Scan tab: toolbar over a full-height ScanRuler iframe. */
+main:has(.panel:not([hidden]) .scan) { max-width: none; padding: 0; }
+.scan { display: flex; flex-direction: column; height: calc(100vh - 3.5rem); height: calc(100dvh - 3.5rem); min-height: 20rem; }
+.scan-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1, 4px) var(--s3); padding: 3px var(--s3); min-height: 36px;
+  border-bottom: 1px solid var(--border); background: var(--surface); font-size: .84rem; }
+.scan-spacer { flex: 1 1 0; }
+.scan-version { font-size: .78rem; white-space: nowrap; margin-right: calc(var(--s2) * -1); }
+.scan-version:empty { display: none; }
+.scan-send { display: inline-flex; align-items: center; gap: 2px; }
+.scan-send[hidden] { display: none; }
+.scan-send-name { font-weight: 600; display: inline-block; max-width: 14rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+.scan-send-x { padding: 0 var(--s2); }
+.scan-send-item { display: block; width: 100%; text-align: left; margin-bottom: 4px; }
+.scan-send .scan-menu { right: auto; left: 0; }
+.scan-note { color: var(--muted); min-width: 0; overflow-wrap: anywhere; }
+.scan-note.error { color: var(--danger); margin: 0; min-height: 0; font-size: inherit; }
+.scan-link { color: var(--accent-text); white-space: nowrap; }
+.scan-btn { min-height: 1.75rem; padding: 0 var(--s3); font-size: .84rem; }
+.scan-file { position: absolute; width: 1px; height: 1px; min-height: 0; padding: 0; opacity: 0; overflow: hidden; pointer-events: none; }
+.scan-progress { width: 6rem; height: .6rem; }
+.scan-wrap { position: relative; }
+.scan-menu { position: absolute; right: 0; top: calc(100% + 8px); z-index: 30; width: 24rem; max-width: calc(100vw - 1.5rem); max-height: 60vh; overflow-y: auto;
+  padding: 6px; background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: var(--radius); box-shadow: var(--shadow-lg); }
+.scan-menu-title { margin: 4px 10px 6px; font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.scan-msg { margin: 6px 10px; }
+.scan-row { display: flex; align-items: center; gap: var(--s2); padding: 6px 8px; border-radius: var(--radius-sm); }
+.scan-row:hover { background: var(--surface-3); }
+.scan-name { display: flex; flex-direction: column; flex: 1 1 0; min-width: 0; }
+.scan-name b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scan-name .muted { font-size: .78rem; }
+.scan-del { color: var(--danger); }
+.scan-body { flex: 1 1 0; min-height: 0; display: flex; }
+.scan-frame { flex: 1 1 auto; width: 100%; height: 100%; border: 0; background: var(--surface); }
+.scan-empty { margin: auto; padding: var(--s5); text-align: center; max-width: 26rem; }
+.scan-empty h2 { margin: 0 0 var(--s2); font-size: 1.1rem; }
+
+@media (max-width: 40rem) {
+  .scan { height: calc(100vh - 3rem - 3.8rem - env(safe-area-inset-bottom)); height: calc(100dvh - 3rem - 3.8rem - env(safe-area-inset-bottom)); }
+  .scan-bar { padding: var(--s2) var(--s3); gap: var(--s2) var(--s3); }
+  .scan-send .scan-menu { left: 0; right: 0; }
+  .scan-spacer { display: none; }
+  .scan-menu { position: fixed; left: 0; right: 0; bottom: 0; top: auto; width: auto; max-width: none; padding: var(--s3) var(--s3) calc(var(--s4) + env(safe-area-inset-bottom));
+    border-radius: 16px 16px 0 0; border-bottom: 0; z-index: 60; }
+  .scan-btn { min-height: 2.5rem; }
+}

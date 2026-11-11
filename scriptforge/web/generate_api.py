@@ -605,6 +605,25 @@ def download(req):
     return Download(buf.getvalue(), f"{name}.zip", "application/zip")
 
 
+def built_stl(req, job: Job, variant) -> tuple[Path, str]:
+    """(the job's built part_local.stl, display name); variant "-" means none/default. 404 when there is none."""
+    result, name = _target(job, None if variant in (None, "", "-") else variant)
+    rel = result.get("out_dir")
+    out = resolve_in_root(req.app.root, rel, suffixes=None) if rel else None
+    f = out / _BUILT["stl"][0] if out is not None else None
+    if f is None or not f.is_file():
+        raise HTTPError(404, "no STL was built for this job (the part did not build locally)")
+    return f, name
+
+
+@route("GET", "/api/generate/{id}/model/{variant}/model.stl")
+def model_stl(req):
+    """The built STL under a URL that ends in .stl, so ScanRuler's ?open= can load it on its own."""
+    job = _job(req)
+    f, _name = built_stl(req, job, req.params["variant"])
+    return Download(f.read_bytes(), "model.stl", _BUILT["stl"][2])
+
+
 @route("GET", "/api/generate/{id}/estimate")
 def estimate(req):
     job = _job(req)
