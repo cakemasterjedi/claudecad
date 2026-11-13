@@ -167,7 +167,32 @@ def test_session_expiry_unit():
     now[0] = 281
     assert not s.valid(t)
     assert not s.valid(None) and not s.valid("x")
-    assert SessionStore().idle == 12 * 3600
+    assert SessionStore().idle == 30 * 24 * 3600
+
+
+def test_sessions_survive_restart_and_store_only_hashes(tmp_path):
+    import os, stat
+    f = tmp_path / "sessions.json"
+    now = [1000.0]
+    a = SessionStore(idle=100, clock=lambda: now[0], path=f)
+    t, gone = a.create(), a.create()
+    a.drop(gone)
+    assert t not in f.read_text() and stat.S_IMODE(os.stat(f).st_mode) == 0o600
+    b = SessionStore(idle=100, clock=lambda: now[0], path=f)     # "restart"
+    assert b.valid(t) and not b.valid(gone)
+    b.keep_only("other")                                           # password change logs everyone else out
+    assert not SessionStore(idle=100, clock=lambda: now[0], path=f).valid(t)
+    c = SessionStore(idle=100, clock=lambda: now[0], path=f)
+    t2 = c.create()
+    now[0] += 101
+    assert not SessionStore(idle=100, clock=lambda: now[0], path=f).valid(t2)   # expired while stopped
+    f.write_text("not json")
+    assert not SessionStore(path=f).valid(t2)                                   # corrupt file: start empty
+
+
+def test_login_cookie_outlives_the_browser_session(web):
+    r, _ = login(web)
+    assert r.status == 200 and f"Max-Age={30 * 24 * 3600}" in r.getheader("Set-Cookie")
 
 
 def test_route_params_query_errors(web):
