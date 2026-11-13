@@ -593,5 +593,5 @@ def build_local(tr: TraceResult) -> LocalResult:
     return LocalBuilder().build(tr)
 
 
-def render(res: LocalResult, path, title=""):
-    return render_png(res.run, path, title) if res.run else None
+def render(res: LocalResult, path, title="", units="mm"):
+    return render_png(res.run, path, title, units) if res.run else None

@@ -12,6 +12,7 @@ from ..llm import make_llm
 from ..onshape import Onshape, OnshapeError
 from . import build as nb
 from . import catalog, prompts
+from ..fslite.runner import drawing_units
 from .local import build_local, render
 from .script import trace
 
@@ -340,7 +341,7 @@ def _generate_native(run, request, out_dir, name, backend, model, max_fixes, rev
             code = fix("repair-local", code, loc.error, "the local geometry builder (it reproduces Onshape "
                        "feature semantics)")
             continue
-        img = render(loc, out_dir / f"local_view_{reviews}.png", request[:80])
+        img = render(loc, out_dir / f"local_view_{reviews}.png", request, drawing_units(request))
         report = f"features in tree: {len(tr.features)}, variables: {len(tr.variable_list)}\n" + loc.report()
         report += _material_report(loc, log)
         unbuilt = not_built_features(tr, loc)
