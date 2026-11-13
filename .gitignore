@@ -9,6 +9,8 @@ scratch_*.py
 # local state, logs and personal work (never publish)
 .scriptforge_native.json
 .scriptforge_api_ledger.jsonl
+.scriptforge_sessions.json
+.scriptforge_sessions.json.tmp
 parts/
 *.egg-info/
 .pytest_cache/

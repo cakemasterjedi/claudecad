@@ -77,6 +77,9 @@
 
 ### Fixed
 
+- **`scriptforge web` kept logging users out**: the login cookie now lasts 30 days (renewed on each use, was a
+  browser-session cookie with a 12 h idle limit), and logins survive a server restart (`.scriptforge_sessions.json`,
+  mode 600, token hashes only).
 - **Paste export of parts whose name starts with a digit** (e.g. "3-5-inch-license-plate"): the feature is now
   named `f35InchLicensePlate`; before, the paste check failed with "expected identifier".
 

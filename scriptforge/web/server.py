@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import hmac
 import importlib
+import hashlib
 import json
 import mimetypes
 import os
@@ -55,7 +56,9 @@ from urllib.parse import parse_qsl, unquote, urlsplit
 
 COOKIE = "scriptforge_session"
 MAX_BODY = 5_000_000
-SESSION_IDLE = 12 * 3600
+SESSION_IDLE = 30 * 24 * 3600   # a month without use; the cookie lives as long
+SESSION_SAVE_EVERY = 3600
+SESSION_FILE = ".scriptforge_sessions.json"
 LOGIN_MAX_FAILS = 5
 LOGIN_WINDOW = 600
 LOGIN_LOCKOUT = 600
@@ -172,36 +175,78 @@ def find_route(method: str, path: str):
 # --- sessions and rate limiting ---------------------------------------------------------------------------
 
 class SessionStore:
-    def __init__(self, idle=SESSION_IDLE, clock=time.monotonic):
-        self.idle, self.clock = idle, clock
-        self._tokens: dict[str, float] = {}
+    """Login tokens with an idle timeout. With `path`, sessions survive a server restart: the file (mode 600) holds
+    only SHA-256 hashes of the tokens and their last-use times, never the tokens themselves."""
+
+    def __init__(self, idle=SESSION_IDLE, clock=time.time, path: Path | None = None):
+        self.idle, self.clock, self.path = idle, clock, path
+        self._tokens: dict[str, float] = {}   # sha256(token) -> last use
+        self._saved_at = 0.0
         self._lock = threading.Lock()
+        self._load()
+
+    @staticmethod
+    def _key(token: str) -> str:
+        return hashlib.sha256(token.encode()).hexdigest()
+
+    def _load(self) -> None:
+        if not self.path:
+            return
+        try:
+            data = json.loads(self.path.read_text())
+            now = self.clock()
+            self._tokens = {k: float(v) for k, v in data.items()
+                            if isinstance(k, str) and len(k) == 64 and now - float(v) <= self.idle}
+        except (OSError, ValueError, TypeError, AttributeError):
+            self._tokens = {}
+
+    def _save(self) -> None:  # caller holds the lock
+        if not self.path:
+            return
+        try:
+            tmp = self.path.with_name(self.path.name + ".tmp")
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w") as f:
+                json.dump(self._tokens, f)
+            os.replace(tmp, self.path)
+            self._saved_at = self.clock()
+        except OSError as e:
+            sys.stderr.write(f"warning: could not save sessions: {e}\n")
 
     def create(self) -> str:
         token = secrets.token_urlsafe(32)  # 32 random bytes
         with self._lock:
-            self._tokens[token] = self.clock()
+            self._tokens[self._key(token)] = self.clock()
+            self._save()
         return token
 
     def valid(self, token: str | None) -> bool:
         if not token:
             return False
+        key = self._key(token)
         with self._lock:
             now = self.clock()
             for t in [t for t, seen in self._tokens.items() if now - seen > self.idle]:
                 del self._tokens[t]
-            if token not in self._tokens:
+            if key not in self._tokens:
                 return False
-            self._tokens[token] = now  # idle timeout: each use refreshes
+            self._tokens[key] = now  # idle timeout: each use refreshes
+            if now - self._saved_at > SESSION_SAVE_EVERY:  # refreshes reach the file at most once an hour
+                self._save()
             return True
 
     def keep_only(self, token: str) -> None:
+        key = self._key(token)
         with self._lock:
-            self._tokens = {t: seen for t, seen in self._tokens.items() if t == token}
+            self._tokens = {t: seen for t, seen in self._tokens.items() if t == key}
+            self._save()
 
     def drop(self, token: str | None) -> None:
+        if not token:
+            return
         with self._lock:
-            self._tokens.pop(token, None)
+            self._tokens.pop(self._key(token), None)
+            self._save()
 
 
 class LoginLimiter:
@@ -398,7 +443,7 @@ class Handler(BaseHTTPRequestHandler):
             raise HTTPError(401, "wrong password")
         app.limiter.success(ip)
         token = app.sessions.create()
-        self._json(200, {"ok": True}, [("Set-Cookie", f"{COOKIE}={token}; HttpOnly; SameSite=Strict; Path=/")])
+        self._json(200, {"ok": True}, [("Set-Cookie", f"{COOKIE}={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age={SESSION_IDLE}")])
 
     def _sse(self, events, keepalive):
         self._headers(200, "text/event-stream; charset=utf-8", extra=[("Connection", "close")])
@@ -502,7 +547,8 @@ def make_server(root, host="127.0.0.1", port=8770, password="") -> tuple[Threadi
     if not password:
         raise ValueError("scriptforge web needs a password")
     load_routes()
-    app = App(Path(root).resolve(), password)
+    root = Path(root).resolve()
+    app = App(root, password, sessions=SessionStore(path=root / SESSION_FILE))
     httpd = ThreadingHTTPServer((host, port), Handler)
     httpd.daemon_threads = True
     httpd.app = app
