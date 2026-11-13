@@ -53,6 +53,14 @@ def test_paste_export_matches(path):
     assert chk["ok"], chk
 
 
+def test_paste_export_title_starting_with_digit():
+    # a web job named "3-5-inch-license-plate" made `export const 35InchLicensePlate`, which does not parse
+    from scriptforge.native.paste import paste_export
+    code, chk = paste_export(trace((ROOT / "examples/native/plate.fs").read_text(), "studio"), "3-5-inch-license-plate")
+    assert chk["ok"], chk
+    assert "export const f35InchLicensePlate" in code
+
+
 # ---------------------------------------------------------------- threads (helix + sweep)
 THREAD = """FeatureScript 3083;
 import(path : "onshape/std/common.fs", version : "3083.0");

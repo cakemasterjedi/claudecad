@@ -184,6 +184,28 @@ def _existing_state(name, document=None):
     return nb.find_state(name, tgt["did"], tgt["wid"]) if tgt else None
 
 
+def _material_report(loc, log) -> str:
+    """Wall, thickness, solid fraction and filament lines for the reviewer. Never raises."""
+    try:
+        from . import geomcheck
+        solids = [b.shape for b in loc.run.solids]
+        if not solids:
+            return ""
+        m = loc.metrics()
+        vol = float(m.get("volume_mm3") or 0)
+        lines = ["material check:", geomcheck.thin_wall_report(geomcheck.thin_walls(solids, 1.2), 1.2),
+                 geomcheck.thick_section_report(geomcheck.thick_sections(solids, 10.0), 10.0)]
+        bb = m.get("bbox_mm")
+        box = (bb[3] - bb[0]) * (bb[4] - bb[1]) * (bb[5] - bb[2]) if bb and len(bb) == 6 else 0
+        if vol and box > 0:
+            lines.append(f"solid fraction: {vol / box:.0%} of the bounding box")
+        lines.append(f"filament estimate: ~{vol / 1000 * 1.24:.0f} g PLA at 100% infill (upper bound)")
+        return "\n" + "\n".join(lines)
+    except Exception as e:  # noqa: BLE001 - a check failure must never break generation
+        log(f"warning: material check failed: {e}")
+        return ""
+
+
 def generate_native(request: str, out_dir: Path | None = None, name: str | None = None, backend: str = "auto",
                     model: str | None = None, max_fixes: int = 5, review_rounds: int = 2,
                     export_formats: tuple = (), budget: int | None = None, paste: bool = False,
@@ -320,6 +342,7 @@ def _generate_native(run, request, out_dir, name, backend, model, max_fixes, rev
             continue
         img = render(loc, out_dir / f"local_view_{reviews}.png", request[:80])
         report = f"features in tree: {len(tr.features)}, variables: {len(tr.variable_list)}\n" + loc.report()
+        report += _material_report(loc, log)
         unbuilt = not_built_features(tr, loc)
         log(f"local build ok ({loc.seconds:.2f}s):\n{report}")
         if unbuilt:

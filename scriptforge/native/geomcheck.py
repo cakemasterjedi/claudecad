@@ -9,6 +9,7 @@ fillets, chamfers and sharp edges a ray leaves at a grazing angle and would unde
 samples are dropped instead of skipping a band along every edge. Entering hits are ignored, so a start point that
 sits in a hole's facet gap (concave facets lie in the void) still measures the material behind it.
 Thin samples are clustered (2 mm) into regions.
+thick_sections: the same rays, to find solid regions thicker than 10 mm that could be cored out (see rules.md).
 Inputs are solids in meters (the local builder's units), reports are in mm.
 """
 from __future__ import annotations
@@ -225,6 +226,83 @@ def thin_wall_report(items: list[ThinWall], min_mm=1.2, top=8) -> str:
         return f"wall check: no walls thinner than {min_mm:g} mm"
     lines = [f"wall check: {len(items)} region(s) thinner than {min_mm:g} mm (thinnest first; "
              f"area counts both faces of a wall):"]
+    lines += ["  " + w.text() for w in items[:top]]
+    if len(items) > top:
+        lines.append(f"  ... and {len(items) - top} more")
+    return "\n".join(lines)
+
+
+# ------------------------------------------------------------------ thick solid sections
+@dataclass
+class ThickSection:
+    part: int
+    max_mm: float              # thickest local thickness found in the region
+    area_mm2: float            # sampled surface area of the region
+    center_mm: tuple
+    samples: int = 0
+
+    def text(self) -> str:
+        x, y, z = self.center_mm
+        return (f"{self.max_mm:5.1f} mm  ~{self.area_mm2:6.0f} mm2  at ({x:.1f}, {y:.1f}, {z:.1f})  part {self.part}")
+
+
+# chord directions: x, y, z and the six face diagonals (an L-shaped section, e.g. a rim above a pocket roof, is
+# thin along a diagonal even where the axis chords are long)
+_AXES = np.array([[1.0, 0, 0], [0, 1.0, 0], [0, 0, 1.0], [1, 1, 0], [1, -1, 0], [1, 0, 1], [1, 0, -1],
+                  [0, 1, 1], [0, 1, -1]]) / np.array([1, 1, 1, 2 ** .5, 2 ** .5, 2 ** .5, 2 ** .5, 2 ** .5, 2 ** .5])[:, None]
+
+
+def thick_sections(solids_m, max_mm=10.0, min_area_mm2=900.0, deflection=0.3, max_samples=1500,
+                   cluster_mm=6.0, seed=0) -> list[ThickSection]:
+    """Solid regions thicker than max_mm (>= min_area_mm2 of surface), thickest/largest first.
+
+    Local thickness of a surface sample = the smallest of: the inward-normal exit distance (head-on exits only) and
+    the chord through the point along x, y, z and the six face diagonals (exit distance forward + backward). Taking the minimum keeps a
+    rib that is tall but thin from counting as thick (its chord across the rib is small).
+    """
+    rng = np.random.default_rng(seed)
+    found = []
+    for part, s in enumerate(solids_m, 1):
+        shape = to_mm(s)
+        t = [x for _, x in face_triangles(shape, deflection, 0.3) if len(x)]
+        if not t:
+            continue
+        tris = np.concatenate(t)
+        cr = np.cross(tris[:, 1] - tris[:, 0], tris[:, 2] - tris[:, 0])
+        nrm = cr / np.maximum(np.linalg.norm(cr, axis=1, keepdims=True), 1e-12)
+        total = float(np.linalg.norm(cr, axis=1).sum() / 2)
+        n = int(min(max_samples, max(500, total / 1.0)))
+        pts, pn, _ = _sample_surface(tris, n, rng)
+        start = pts - pn * 1e-3
+        dist, cosd = _first_exit(start, -pn, tris, nrm)
+        thick = np.where(cosd >= 0.5, dist + 1e-3, np.inf)
+        for ax in _AXES:           # only samples still thicker than max_mm need the next direction
+            act = np.flatnonzero(~(thick <= max_mm))
+            if not len(act):
+                break
+            d = np.tile(ax, (len(act), 1))
+            fwd, _ = _first_exit(start[act], d, tris, nrm)
+            bwd, _ = _first_exit(start[act], -d, tris, nrm)
+            thick[act] = np.minimum(thick[act], fwd + bwd)
+        big = np.flatnonzero(np.isfinite(thick) & (thick > max_mm))
+        if not len(big):
+            continue
+        per_sample = total / n
+        for g in _cluster(pts[big], cluster_mm):
+            idx = big[g]
+            area = len(idx) * per_sample
+            if area >= min_area_mm2:
+                found.append(ThickSection(part, round(float(np.median(thick[idx])), 1), round(area, 0),
+                                          tuple(round(float(v), 1) for v in pts[idx].mean(0)), len(idx)))
+    found.sort(key=lambda w: (-w.max_mm, -w.area_mm2))
+    return found
+
+
+def thick_section_report(items: list[ThickSection], max_mm=10.0, top=5) -> str:
+    if not items:
+        return f"thickness check: no solid sections thicker than {max_mm:g} mm"
+    lines = [f"thickness check: {len(items)} solid region(s) thicker than {max_mm:g} mm (typical thickness, "
+             "thickest first; candidates for coring out):"]
     lines += ["  " + w.text() for w in items[:top]]
     if len(items) > top:
         lines.append(f"  ... and {len(items) - top} more")

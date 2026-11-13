@@ -22,6 +22,24 @@ def test_examples_trace():
         assert tr.ok, (f.name, tr.error)
 
 
+def test_ribbed_mold_builds_one_valid_cored_part():
+    from scriptforge.native.geomcheck import thick_sections, thin_walls, validity
+    from scriptforge.native.local import build_local
+    loc = build_local(_trace((EXAMPLES / "ribbed_mold.fs").read_text()))     # default mode, as the CLI builds it
+    assert loc.ok and not loc.partial, (loc.error, loc.warnings)
+    solids = [b.shape for b in loc.run.solids]
+    assert len(solids) == 1 and all(v.ok for v in validity(solids))
+    assert thin_walls(solids, 1.2) == [] and thick_sections(solids, 10.0) == []
+    assert loc.metrics()["volume_mm3"] < 0.7 * 120 * 60 * 20      # cored out (deep + shallow pockets), not a solid block
+
+
+def test_spec_teaches_pocket_ribs_and_shows_the_mold_example():
+    from scriptforge.native import prompts
+    text = prompts.system_prompt()
+    assert "Saving filament: pockets and ribs" in text and "ribbed_mold.fs" in prompts.FEW_SHOT
+    assert "cavityDepth" in text and "2.4 mm" in text and "deep (height - plate)" in text
+
+
 def test_variables_become_expressions():
     tr = trace(body('''
         variable(context, "t", 5 * millimeter);

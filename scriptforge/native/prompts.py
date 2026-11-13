@@ -6,7 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent.parent
 EXAMPLES = ROOT / "examples" / "native"
 RULES = ROOT / "rules.md"
-FEW_SHOT = ["plate.fs", "l_bracket.fs", "flange.fs", "enclosure.fs"]
+FEW_SHOT = ["plate.fs", "l_bracket.fs", "flange.fs", "enclosure.fs", "ribbed_mold.fs"]
 
 SPEC = r"""
 You are a CAD engineer writing Onshape Part Studio scripts. A script is FeatureScript whose `build`
@@ -132,11 +132,30 @@ setProperty(context, { "entities" : qCreatedBy(id + "Disc", EntityType.BODY), "p
 color(r, g, b) takes components 0..1, not 0..255. Bodies with the same name are one color/filament group. Single-color
 parts need none of this.
 
+# Saving filament: pockets and ribs instead of solid mass
+Molds, jigs, fixtures, mounts, blocks and thick plates (any solid region thicker than ~10 mm with a footprint over
+~30 x 30 mm) must not be solid blocks. Leave small or thin parts alone, and parts the request says must be solid.
+Core them out with an open-backed grid of pockets: a sketch on the back face (or on the Top plane for the bottom
+face) with skRectangle cells in `for` loops and a BLIND REMOVE extrude, one pair per pocket depth. The material between the pockets
+is the ribs (no UP_TO_* bounds are needed). See ribbed_mold.fs. Defaults, as variables:
+- Keep solid: the functional face (mold cavity and parting face, mating and clamping faces), a skin >= 3 mm under the
+  deepest point of any cavity, a perimeter rim >= 5 mm, and >= 4 mm of material around pins, bolt holes, pour
+  spouts, sprues and alignment features (skip any cell that would reach them).
+- Ribs 2.4 mm thick, cells <= 12 mm wide, pitch = cell + rib; derive the cell count from the variables with floor().
+  Pockets open from ONE face only, never closed voids (they cannot be cleaned). Two depths (two sketches, two cuts):
+  shallow (height - cavity depth - skin) for cells within `skin` of a functional cavity; deep (height - plate) for all
+  other cells, leaving a solid plate of about 4 mm under the functional face.
+- Mold halves print parting face UP (cavity open, no supports), so the pockets open on the bed side; their flat
+  roofs (<= 12 mm bridges) are acceptable.
+- Slicers already use sparse infill, so the saving against a 15% infill solid is modest; it comes from fewer
+  top/bottom skins and perimeters and from stiff parts printed at high infill.
+
 # Checklist
 - Unless asked otherwise: one part, Z up, sitting on the Top plane, roughly centered or at a sensible corner.
 - Order: variables -> base sketch + extrude -> secondary bodies (ADD) -> cuts (REMOVE) -> patterns -> fillets/chamfers.
 - Cutting extrudes: THROUGH_ALL in the right direction, booleanScope = the part.
 - Multicolor: one NEW body per color, no overlaps, every body named + colored (color() is 0..1).
+- Mold, jig, fixture or block-type part: core out solid sections thicker than 10 mm with the pocket grid above.
 """
 
 
@@ -261,8 +280,10 @@ def review_prompt(request: str, code: str, report: str, not_built: list[str] | N
     parts.append("Check the part against the request: overall size, number of parts, holes (count, size, position, "
                  "going through), fillets/chamfers present, practical problems (features colliding, holes breaking "
                  "edges), printability if it is meant to be 3D printed (clearances, print orientation, overhangs, "
-                 "snap fits), and the user's general rules (e.g. no Hole feature unless asked, variables for key "
+                 "snap fits), solid sections thicker than 10 mm, and the user's general rules (e.g. no Hole feature unless asked, variables for key "
                  "dimensions). If it is right reply with exactly LGTM as the last line. Otherwise say briefly what "
                  "is wrong and return the complete corrected script in one ```featurescript block (keep names of "
-                 "unchanged features so they are reused).")
+                 "unchanged features so they are reused). If the result reports solid sections thicker than 10 mm on a mold, jig, "
+                 "fixture or block-type part and the request does not ask for a solid part, core them out with the pocket "
+                 "grid from the spec; also fix any thin-wall regions it reports.")
     return "\n\n".join(parts)

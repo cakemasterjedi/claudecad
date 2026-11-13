@@ -39,6 +39,8 @@ class PasteError(Exception):
 
 def _ident(name: str) -> str:
     s = re.sub(r"[^A-Za-z0-9]+", " ", name).title().replace(" ", "")
+    if s[:1].isdigit():         # FeatureScript identifiers cannot start with a digit ("3-5-inch-plate")
+        s = "f" + s
     return s[:1].lower() + s[1:] if s else "f"
 
 
