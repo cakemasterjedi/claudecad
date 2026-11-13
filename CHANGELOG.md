@@ -75,6 +75,11 @@
 - **`studio push --public`** (or `FSGEN_PUBLIC=1`): create fsgen's Onshape document as public. Free Onshape plans
   refuse private documents (409); that error now says to use `--public` or `--document`.
 
+### Fixed
+
+- **Paste export of parts whose name starts with a digit** (e.g. "3-5-inch-license-plate"): the feature is now
+  named `f35InchLicensePlate`; before, the paste check failed with "expected identifier".
+
 ### Changed
 
 - `studio build` exits 1 and exports nothing when a part fails the geometry check.
