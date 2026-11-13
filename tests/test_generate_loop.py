@@ -56,6 +56,14 @@ def test_paste_mode_rejects_unpasteable_features_early_and_records_assumptions(r
     assert (tmp_path / "out/paste_feature.fs").exists()
 
 
+def test_review_prompt_carries_the_material_check(run):
+    res, fake = run([block(PLATE), "Fine.\nLGTM"])
+    review = fake.prompts[1]
+    assert "material check:" in review and "thickness check:" in review and "wall check:" in review
+    assert "filament estimate: ~" in review and "solid fraction:" in review
+    assert "thicker than 10 mm" in review          # the review checklist mentions it
+
+
 def test_reviewer_fix_gets_a_follow_up_review(run):
     thicker = PLATE.replace('"thickness", 6', '"thickness", 8')
     res, fake = run([

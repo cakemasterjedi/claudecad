@@ -38,8 +38,10 @@ one rule per bullet, written as an instruction.
   screws/pins about 0.2–0.4 mm larger than nominal. Make clearances a variable.
 - Give each part a flat face to print on and lay printed parts out side by side on the Top plane, in their print
   orientation (not assembled), unless asked otherwise.
-- Avoid overhangs flatter than 45° and unsupported flat ceilings; use 45° chamfers instead of fillets on edges
+- Avoid overhangs flatter than 45° and unsupported flat ceilings (bridges up to 12 mm are fine, e.g. pocket roofs); use 45° chamfers instead of fillets on edges
   that face the print bed.
+- Core out thick solid sections (molds, jigs, blocks, > 10 mm thick over 30 x 30 mm) with an open-backed rib/pocket
+  grid: ribs >= 2.4 mm, cells <= 12 mm, solid skin >= 3 mm on functional faces, rim >= 5 mm.
 - Minimum wall thickness 1.2 mm (≈ 3 perimeters); minimum feature size about 0.8 mm.
 - Printed threads: pitch ≥ 1.5 mm with radial clearance ≥ 0.2 mm; start/end threads with a chamfer.
 - Snap fits need something that can flex: a slot through a pin, a thin cantilever arm, or a split ring. Two

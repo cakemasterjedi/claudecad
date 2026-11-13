@@ -24,6 +24,11 @@
   (fills New part), or "Save to Scans". `scriptforge scanruler status|update` installs the newest `vX.Y.Z` release
   (built in staging, switched only after the build passes, one previous version kept); a daily systemd user timer is
   in `deploy/systemd/`. Desktop browsers only: phones, tablets and windows under 900px get no Scan tab or ScanRuler items.
+- **Filament-saving molds and blocks**: the generate prompt now teaches open-backed pocket/rib grids (ribs 2.4 mm,
+  cells <= 12 mm, solid skin and rim) instead of solid mass for molds, jigs, fixtures and thick blocks, with a new
+  `examples/native/ribbed_mold.fs` example. The review step now also sees a material check (thin walls, solid
+  sections thicker than 10 mm via `geomcheck.thick_sections`, solid fraction, PLA filament estimate) and fixes thick
+  solid sections. 0 Onshape calls.
 - **`scriptforge web` Workbench + Models UI**: a dark 3-pane Workbench (history, 3D view, variables/prompt/log) and a
   Models grid with thumbnails. On a phone: tabs in a bottom bar, the model list behind a Models button, and
   Prompt, Assumptions and Log folded until tapped.

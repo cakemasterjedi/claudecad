@@ -8,14 +8,15 @@ import zipfile
 from pathlib import Path
 
 import pytest
-from OCP.BRepAlgoAPI import BRepAlgoAPI_Fuse
+from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut, BRepAlgoAPI_Fuse
 from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeSolid, BRepBuilderAPI_Sewing, BRepBuilderAPI_Transform
 from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
 from OCP.gp import gp_Pnt, gp_Trsf
 
 from scriptforge.fslite import geom as G
 from scriptforge.native.fit import explode, place
-from scriptforge.native.geomcheck import thin_wall_report, thin_walls, validity, validity_report
+from scriptforge.native.geomcheck import (thick_section_report, thick_sections, thin_wall_report, thin_walls, validity,
+                                          validity_report)
 from scriptforge.native.local import build_local
 from scriptforge.native.script import trace
 from scriptforge.native.section import section
@@ -59,6 +60,31 @@ def test_validity_flags_a_shell_with_a_face_missing():
     assert not v.ok
     text = v.text()
     assert "PROBLEMS" in text and "open edge" in text and "0 solids" in text
+
+
+# ---------------------------------------------------------------- thick sections
+def pocketed(size=60, h=30, rib=2.4, cell=12, skin=3, n=4):
+    """size x size x h block cored out from the bottom: n x n pockets, ribs and rim of `rib`, solid skin on top."""
+    shape = block(0, 0, 0, size, size, h)
+    for i in range(n):
+        for j in range(n):
+            shape = BRepAlgoAPI_Cut(shape, block(rib + i * (cell + rib), rib + j * (cell + rib), 0, cell, cell, h - skin)).Shape()
+    return shape
+
+
+def test_thick_solid_block_is_flagged_and_reported():
+    found = thick_sections([meters(block(0, 0, 0, 60, 60, 30))])
+    assert found and found[0].max_mm >= 15 and found[0].area_mm2 >= 900
+    text = thick_section_report(found)
+    assert "thicker than 10 mm" in text and "part 1" in text
+    assert thick_section_report([]) == "thickness check: no solid sections thicker than 10 mm"
+
+
+def test_ribbed_block_and_small_block_are_not_flagged():
+    ribbed = pocketed()
+    assert thick_sections([meters(ribbed)]) == []
+    assert thin_walls([meters(ribbed)]) == []
+    assert thick_sections([meters(block(0, 0, 0, 20, 20, 15))]) == []
 
 
 # ---------------------------------------------------------------- thin walls
